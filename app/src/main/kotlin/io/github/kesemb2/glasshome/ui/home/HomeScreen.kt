@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -78,7 +79,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /** The grid starts this far below the hero; on screen, its first row sits [GRID_VIEW_TOP] from the top. */
-private val GRID_GAP = 60.dp
+private val GRID_GAP = 80.dp
 private val GRID_VIEW_TOP = 96.dp
 private val FOLDER_GRID_TOP = 116.dp
 
@@ -211,6 +212,21 @@ private fun HomeContent(
         val camera by animateFloatAsState(target, Springs.camera(), label = "camera")
         val gridAmount by animateFloatAsState(if (target > 0f) 1f else 0f, Springs.content(), label = "grid")
 
+        // Remembered, so focus moving elsewhere does not recompose the hero.
+        val heroFocus = remember(nav, view) {
+            Modifier
+                .focusKey(nav, HERO)
+                .onFocusChanged { if (it.isFocused) nav.focused(HERO, Area.Hero) }
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when (event.key) {
+                        Key.DirectionDown -> focusShelf() || focusGrid()
+                        Key.DirectionUp -> nav.focus(SETTINGS)
+                        else -> false
+                    }
+                }
+        }
+
         CompositionLocalProvider(LocalFocusAllowed provides !overlaysOpen) {
             HeroScreen(
                 state = hero,
@@ -219,17 +235,7 @@ private fun HomeContent(
                 camera = { camera },
                 grid = { gridAmount },
                 inGrid = target > 0f,
-                focusModifier = Modifier
-                    .focusKey(nav, HERO)
-                    .onFocusChanged { if (it.isFocused) nav.focused(HERO, Area.Hero) }
-                    .onPreviewKeyEvent { event ->
-                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                        when (event.key) {
-                            Key.DirectionDown -> focusShelf() || focusGrid()
-                            Key.DirectionUp -> nav.focus(SETTINGS)
-                            else -> false
-                        }
-                    },
+                focusModifier = heroFocus,
                 onPlay = onPlay,
                 onDismiss = controller::dismiss,
                 onRequestAccess = onRequestAccess,
@@ -272,7 +278,8 @@ private fun HomeContent(
                     items = view.grid,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = gridTop)
+                        .offset(y = gridTop)
+                        .wrapContentHeight(align = Alignment.Top, unbounded = true)
                         .onPreviewKeyEvent { event ->
                             event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp &&
                                 nav.area == Area.Grid && row == 0 && (focusShelf() || focusHero())
@@ -461,6 +468,7 @@ private fun FolderLayer(overlay: Overlay.Folder, top: Boolean, view: HomeView, a
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = 12.dp)
+                        .wrapContentHeight(align = Alignment.Top, unbounded = true)
                         .offset { IntOffset(0, -camera.roundToInt()) },
                 ) { item ->
                     val app = (item as GridItem.App).app

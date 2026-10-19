@@ -45,6 +45,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
@@ -211,7 +212,9 @@ fun HeroScreen(
     BackHandler(enabled = menuOpen) { menuOpen = false }
 
     Box(Modifier.fillMaxSize()) {
-        HeroBackdrop(item?.key, sharp.bitmapFor(backdropUrl), soft.bitmapFor(backdropUrl), forward, rtl, overscanPx)
+        HeroBackdrop(item?.key, sharp.bitmapFor(backdropUrl), soft.bitmapFor(backdropUrl), forward, rtl, overscanPx) {
+            grid() >= 1f
+        }
         Scrims(rtl) { 1f - grid() }
         GridBackdrop(dim.bitmapFor(backdropUrl), grid)
     }
@@ -221,7 +224,11 @@ fun HeroScreen(
         Modifier
             .fillMaxSize()
             .offset { IntOffset(0, -camera().roundToInt()) }
-            .graphicsLayer { alpha = (1f - grid()).coerceIn(0f, 1f) },
+            .graphicsLayer {
+                alpha = (1f - grid()).coerceIn(0f, 1f)
+                // Fade each element on its own: no full-screen offscreen buffer while fading.
+                compositingStrategy = CompositingStrategy.ModulateAlpha
+            },
     ) {
         if (item != null) {
             Column(
@@ -306,6 +313,7 @@ private fun HeroBackdrop(
     forward: Boolean,
     rtl: Boolean,
     overscanPx: Float,
+    covered: () -> Boolean,
 ) {
     val layers = remember { mutableStateListOf<BackdropLayer>() }
     LaunchedEffect(key, sharp, soft) {
@@ -325,6 +333,8 @@ private fun HeroBackdrop(
         layers.removeAll(below)
     }
     Canvas(Modifier.fillMaxSize()) {
+        // Behind the grid the blurred backdrop covers this completely; skip the full-screen draws.
+        if (covered()) return@Canvas
         layers.forEach { drawCover(it.image, it.alpha.value, it.offset.value, overscanPx) }
     }
 }

@@ -34,6 +34,9 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.layer.CompositingStrategy
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.findRootCoordinates
@@ -42,12 +45,14 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.kesemb2.glasshome.R
 import io.github.kesemb2.glasshome.ui.theme.ContinuousRoundedShape
 import io.github.kesemb2.glasshome.ui.theme.GlassColors
 import io.github.kesemb2.glasshome.ui.theme.Springs
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
@@ -161,6 +166,8 @@ object LiquidGlass {
         failed = true
     }
 
+    internal val usable: Boolean get() = !failed
+
     @RequiresApi(33)
     private fun compile(source: String) {
         RuntimeShader(source)
@@ -175,6 +182,10 @@ object LiquidGlass {
  * dispersion there, vibrancy, an adaptive tint (lighter over dark content, darker over light), and two symmetric
  * rim-light lobes; the screen's scrims are refracted with the image. Without it: the plain backdrop crop, the
  * scrims, a tint (stronger when [focus] is 1), an inner top highlight and gradient rims.
+ *
+ * Each surface is rendered once into a cached offscreen layer per backdrop image and only re-rendered when what it
+ * shows changes (its image, position, size, focus or the scrims). Everything else on screen can redraw around it
+ * for the cost of copying that layer, and a cross-fade between two images only changes the layers' alpha.
  */
 fun Modifier.glass(shape: Shape, focus: () -> Float = { 0f }, rim: Boolean = true): Modifier = composed {
     val backdrop = LocalGlassBackdrop.current
@@ -183,42 +194,33 @@ fun Modifier.glass(shape: Shape, focus: () -> Float = { 0f }, rim: Boolean = tru
     onGloballyPositioned { sampler.update(it) }
         .drawWithCache {
             val outline = shape.createOutline(size, layoutDirection, this)
-            val path = outline.asPath()
-            val radius = outline.cornerRadius(shape, this)
             val rtl = layoutDirection == LayoutDirection.Rtl
-            val rimBrush = Brush.linearGradient(
-                0f to GlassColors.GlassRim,
-                0.65f to Color.Transparent,
-                start = Offset(if (rtl) size.width else 0f, 0f),
-                end = Offset(if (rtl) 0f else size.width, size.height),
+            val look = GlassLook(
+                path = outline.asPath(),
+                radius = outline.cornerRadius(shape, this),
+                rimBrush = Brush.linearGradient(
+                    0f to GlassColors.GlassRim,
+                    0.65f to Color.Transparent,
+                    start = Offset(if (rtl) size.width else 0f, 0f),
+                    end = Offset(if (rtl) 0f else size.width, size.height),
+                ),
+                reflectionBrush = Brush.linearGradient(
+                    0.6f to Color.Transparent,
+                    1f to GlassColors.GlassRim.copy(alpha = 0.22f),
+                    start = Offset(if (rtl) size.width else 0f, 0f),
+                    end = Offset(if (rtl) 0f else size.width, size.height),
+                ),
+                highlight = Brush.verticalGradient(
+                    0f to GlassColors.GlassHighlight,
+                    0.4f to Color.Transparent,
+                    startY = 0f,
+                    endY = size.height,
+                ),
+                stroke = Stroke(width = 1.dp.toPx()),
+                rim = rim,
             )
-            val reflectionBrush = Brush.linearGradient(
-                0.6f to Color.Transparent,
-                1f to GlassColors.GlassRim.copy(alpha = 0.22f),
-                start = Offset(if (rtl) size.width else 0f, 0f),
-                end = Offset(if (rtl) 0f else size.width, size.height),
-            )
-            val highlight = Brush.verticalGradient(
-                0f to GlassColors.GlassHighlight,
-                0.4f to Color.Transparent,
-                startY = 0f,
-                endY = size.height,
-            )
-            val stroke = Stroke(width = 1.dp.toPx())
-            onDrawBehind {
-                val focusAmount = focus().coerceIn(0f, 1f)
-                val lit = backdrop != null && lens != null &&
-                    sampler.drawLiquid(this, path, backdrop, lens, radius, focusAmount)
-                if (!lit) {
-                    if (backdrop != null) sampler.drawPlain(this, path, backdrop)
-                    drawPath(path, lerp(GlassColors.GlassTint, GlassColors.GlassTintFocused, focusAmount))
-                    drawPath(path, highlight)
-                    if (rim) {
-                        drawPath(path, rimBrush, style = stroke)
-                        drawPath(path, reflectionBrush, style = stroke)
-                    }
-                }
-            }
+            val slots = arrayOf(GlassSlot(obtainGraphicsLayer()), GlassSlot(obtainGraphicsLayer()))
+            onDrawBehind { sampler.draw(this, slots, look, backdrop, lens, focus().coerceIn(0f, 1f)) }
         }
 }
 
@@ -240,21 +242,49 @@ private fun Outline.cornerRadius(shape: Shape, density: Density): Float = when (
     is Outline.Generic -> (shape as? ContinuousRoundedShape)?.radiusPx(density)?.times(1.25f) ?: 0f
 }
 
+/** A surface's shape and the brushes of the fallback look, rebuilt only when its size or direction changes. */
+private class GlassLook(
+    val path: Path,
+    val radius: Float,
+    val rimBrush: Brush,
+    val reflectionBrush: Brush,
+    val highlight: Brush,
+    val stroke: Stroke,
+    val rim: Boolean,
+)
+
+/** Everything a cached rendering depends on; when any of it changes, the layer is rendered again. */
+private data class SlotKey(
+    val bitmap: ImageBitmap?,
+    val origin: Offset?,
+    val root: Size?,
+    val size: Size,
+    val focus: Float,
+    val shade: GlassShade?,
+    val zoom: Float,
+    val liquid: Boolean,
+)
+
+/** One cached rendering of a surface (an offscreen layer) for one backdrop image. */
+private class GlassSlot(val layer: GraphicsLayer) {
+    var key: SlotKey? = null
+    var lens: Any? = null // Lens on Android 13+, kept untyped so older runtimes never load the class
+
+    init {
+        layer.compositingStrategy = CompositingStrategy.Offscreen
+    }
+}
+
 /**
- * Maps the screen-sized blurred bitmap onto one surface; keeps shaders per bitmap (at most two live). The
- * surface's position is observable state, so a surface that moves (scrolling, focus scale) redraws its sample.
+ * Maps the screen-sized blurred bitmap onto one surface. The surface's position is observable state, so a
+ * surface that moves (scrolling, focus scale) renders its sample again.
  */
 private class BackdropSampler {
     private var origin by mutableStateOf(Offset.Zero)
     private var root by mutableStateOf(Size.Zero)
     private val matrix = Matrix()
-    private val plainSlots = arrayOfNulls<PlainSlot>(2)
-    private var nextPlain = 0
-    private var liquid: Any? = null // Lenses on Android 13+, kept untyped so older runtimes never load the class
 
-    private class PlainSlot(val bitmap: ImageBitmap, val shader: Shader, val brush: ShaderBrush)
-
-    private class Placement(val origin: Offset, val root: Size)
+    class Placement(val origin: Offset, val root: Size)
 
     fun update(coordinates: LayoutCoordinates) {
         if (!coordinates.isAttached) return
@@ -269,7 +299,7 @@ private class BackdropSampler {
         return Placement(origin, root)
     }
 
-    private fun mapBitmap(bitmap: ImageBitmap, placement: Placement, zoom: Float): Matrix = matrix.apply {
+    fun mapBitmap(bitmap: ImageBitmap, placement: Placement, zoom: Float): Matrix = matrix.apply {
         reset()
         val root = placement.root
         setScale(root.width / bitmap.width * zoom, root.height / bitmap.height * zoom)
@@ -279,119 +309,124 @@ private class BackdropSampler {
         )
     }
 
-    fun drawPlain(scope: DrawScope, path: Path, backdrop: GlassBackdrop) {
-        val placement = placement() ?: return
-        val previous = backdrop.previous
-        val current = backdrop.current
-        val fade = backdrop.fade.value
-        if (previous != null && fade < 1f) plain(scope, path, previous, placement, backdrop.zoom, 1f)
-        if (current != null) plain(scope, path, current, placement, backdrop.zoom, if (previous != null) fade else 1f)
-        backdrop.shade?.invoke(placement.root)?.brushes(placement.origin.x, placement.origin.y)
-            ?.forEach { scope.drawPath(path, it) }
+    fun draw(scope: DrawScope, slots: Array<GlassSlot>, look: GlassLook, backdrop: GlassBackdrop?, source: String?, focus: Float) {
+        val placement = placement()
+        val current = backdrop?.current
+        val previous = backdrop?.previous
+        val fade = backdrop?.fade?.value ?: 1f
+        val fading = previous != null && fade < 1f
+        val shade = placement?.let { backdrop?.shade?.invoke(it.root) }
+        val zoom = backdrop?.zoom ?: 1f
+        val liquid = source != null && LiquidGlass.usable && Build.VERSION.SDK_INT >= 33
+        val frame = Frame(placement, shade, zoom, focus, look, source, liquid)
+        if (fading) drawSlot(scope, slots, previous, current, 1f, frame)
+        drawSlot(scope, slots, current, if (fading) previous else null, if (fading) fade else 1f, frame)
     }
 
-    private fun plain(scope: DrawScope, path: Path, bitmap: ImageBitmap, placement: Placement, zoom: Float, alpha: Float) {
-        val slot = plainSlots.firstOrNull { it?.bitmap === bitmap } ?: run {
+    private class Frame(
+        val placement: Placement?,
+        val shade: GlassShade?,
+        val zoom: Float,
+        val focus: Float,
+        val look: GlassLook,
+        val source: String?,
+        val liquid: Boolean,
+    )
+
+    private fun drawSlot(scope: DrawScope, slots: Array<GlassSlot>, bitmap: ImageBitmap?, other: ImageBitmap?, alpha: Float, frame: Frame) {
+        val key = SlotKey(
+            bitmap, frame.placement?.origin, frame.placement?.root, scope.size, frame.focus, frame.shade, frame.zoom, frame.liquid,
+        )
+        // The slot already showing this, else one with the same image, else one the other layer does not need.
+        val slot = slots.firstOrNull { it.key == key }
+            ?: slots.firstOrNull { it.key != null && it.key?.bitmap === bitmap }
+            ?: slots.firstOrNull { it.key == null || it.key?.bitmap !== other }
+            ?: slots[0]
+        if (slot.key != key) {
+            val width = ceil(scope.size.width).toInt().coerceAtLeast(1)
+            val height = ceil(scope.size.height).toInt().coerceAtLeast(1)
+            slot.layer.record(scope, scope.layoutDirection, IntSize(width, height)) { render(this, slot, bitmap, frame) }
+            slot.key = key
+        }
+        slot.layer.alpha = alpha
+        scope.drawLayer(slot.layer)
+    }
+
+    private fun render(scope: DrawScope, slot: GlassSlot, bitmap: ImageBitmap?, frame: Frame) {
+        val placement = frame.placement
+        val look = frame.look
+        if (frame.liquid && bitmap != null && placement != null && frame.source != null && Build.VERSION.SDK_INT >= 33) {
+            try {
+                val lens = (slot.lens as? Lens) ?: Lens(frame.source).also { slot.lens = it }
+                lens.draw(scope, look, bitmap, mapBitmap(bitmap, placement, frame.zoom), placement, frame.shade, frame.focus)
+                return
+            } catch (_: Exception) {
+                LiquidGlass.disable()
+            }
+        }
+        if (bitmap != null && placement != null) {
             val shader = ImageShader(bitmap, TileMode.Clamp, TileMode.Clamp)
-            PlainSlot(bitmap, shader, ShaderBrush(shader)).also {
-                plainSlots[nextPlain] = it
-                nextPlain = (nextPlain + 1) % plainSlots.size
-            }
+            shader.setLocalMatrix(mapBitmap(bitmap, placement, frame.zoom))
+            scope.drawPath(look.path, ShaderBrush(shader))
+            frame.shade?.brushes(placement.origin.x, placement.origin.y)?.forEach { scope.drawPath(look.path, it) }
         }
-        slot.shader.setLocalMatrix(mapBitmap(bitmap, placement, zoom))
-        scope.drawPath(path, slot.brush, alpha = alpha)
-    }
-
-    /** Returns false when the lens cannot draw (no source image yet, failure), so the caller falls back. */
-    fun drawLiquid(scope: DrawScope, path: Path, backdrop: GlassBackdrop, source: String, radius: Float, focus: Float): Boolean {
-        if (Build.VERSION.SDK_INT < 33) return false
-        if (backdrop.current == null) return false
-        val placement = placement() ?: return false
-        return try {
-            val lenses = (liquid as? Lenses) ?: Lenses(source).also { liquid = it }
-            lenses.draw(scope, path, backdrop, placement, radius, focus)
-            true
-        } catch (_: Exception) {
-            LiquidGlass.disable()
-            false
+        scope.drawPath(look.path, lerp(GlassColors.GlassTint, GlassColors.GlassTintFocused, frame.focus))
+        scope.drawPath(look.path, look.highlight)
+        if (look.rim) {
+            scope.drawPath(look.path, look.rimBrush, style = look.stroke)
+            scope.drawPath(look.path, look.reflectionBrush, style = look.stroke)
         }
     }
+}
 
-    @RequiresApi(33)
-    private inner class Lenses(source: String) {
-        /** A compiled lens; only its input bitmap changes when the hero moves on, so nothing recompiles. */
-        private inner class Lens(source: String) {
-            val shader = RuntimeShader(source)
-            val brush = ShaderBrush(shader)
-            var bitmap: ImageBitmap? = null
-            private var sample: BitmapShader? = null
+/** A compiled lens for one cached layer; only its input bitmap and uniforms change, so nothing recompiles. */
+@RequiresApi(33)
+private class Lens(source: String) {
+    private val shader = RuntimeShader(source)
+    private val brush = ShaderBrush(shader)
+    private var bitmap: ImageBitmap? = null
+    private var sample: BitmapShader? = null
 
-            fun use(image: ImageBitmap): BitmapShader {
-                sample?.takeIf { bitmap === image }?.let { return it }
-                return BitmapShader(
-                    image.asAndroidBitmap(),
-                    android.graphics.Shader.TileMode.CLAMP,
-                    android.graphics.Shader.TileMode.CLAMP,
-                ).apply { filterMode = BitmapShader.FILTER_MODE_LINEAR }.also {
-                    bitmap = image
-                    sample = it
-                }
-            }
+    fun draw(
+        scope: DrawScope, look: GlassLook, image: ImageBitmap, map: Matrix, placement: BackdropSampler.Placement,
+        shade: GlassShade?, focus: Float,
+    ) {
+        val sample = sample?.takeIf { bitmap === image } ?: BitmapShader(
+            image.asAndroidBitmap(),
+            android.graphics.Shader.TileMode.CLAMP,
+            android.graphics.Shader.TileMode.CLAMP,
+        ).apply { filterMode = BitmapShader.FILTER_MODE_LINEAR }.also {
+            bitmap = image
+            sample = it
         }
+        sample.setLocalMatrix(map)
+        // The runtime shader keeps the child as it was when set, so set it again after moving it.
+        shader.setInputShader("backdrop", sample)
 
-        // Two lenses: the current glass source and, during a cross-fade, the previous one.
-        private val lenses = arrayOf(Lens(source), Lens(source))
-
-        fun draw(scope: DrawScope, path: Path, backdrop: GlassBackdrop, placement: Placement, radius: Float, focus: Float) {
-            val previous = backdrop.previous
-            val current = backdrop.current ?: return
-            val fade = backdrop.fade.value
-            val shade = backdrop.shade?.invoke(placement.root)
-            if (previous != null && fade < 1f) lens(scope, path, previous, current, placement, backdrop.zoom, shade, radius, focus, 1f)
-            lens(scope, path, current, previous, placement, backdrop.zoom, shade, radius, focus, if (previous != null) fade else 1f)
+        // Lens geometry scales with the surface's short side, so small pills are not all rim.
+        val width = scope.size.width
+        val height = scope.size.height
+        val minSide = min(width, height)
+        val reference = REFERENCE_SIDE_DP * scope.density
+        shader.setFloatUniform("size", width, height)
+        shader.setFloatUniform("radius", look.radius)
+        shader.setFloatUniform("bevel", max(2f, min(BEVEL_MAX_PX, minSide * BEVEL_RATIO)))
+        shader.setFloatUniform("refractPx", min(REFRACT_MAX_PX, REFRACT_RATIO * minSide * min(1f, minSide / reference)))
+        shader.setFloatUniform("dispersion", DISPERSION)
+        shader.setFloatUniform("lightDir", LIGHT_X, LIGHT_Y)
+        shader.setFloatUniform("spec", SPECULAR * (1f + 0.3f * focus))
+        shader.setFloatUniform("rimBandMax", max(2f, min(RIM_BAND_MAX_PX, minSide * RIM_BAND_RATIO)))
+        shader.setFloatUniform("saturation", VIBRANCY)
+        shader.setFloatUniform("focusTint", FOCUS_TINT * focus)
+        shader.setFloatUniform("origin", placement.origin.x, placement.origin.y)
+        if (shade != null) {
+            shader.setFloatUniform("shadeX", shade.fromX, shade.toX, shade.alphaX, shade.uniform)
+            shader.setFloatUniform("shadeY", shade.fromY, shade.toY, shade.alphaY, 0f)
+        } else {
+            shader.setFloatUniform("shadeX", 0f, 1f, 0f, 0f)
+            shader.setFloatUniform("shadeY", 0f, 1f, 0f, 0f)
         }
-
-        private fun lens(
-            scope: DrawScope, path: Path, bitmap: ImageBitmap, other: ImageBitmap?, placement: Placement, zoom: Float,
-            shade: GlassShade?, radius: Float, focus: Float, alpha: Float,
-        ) {
-            // Reuse the lens already showing this bitmap, else one not needed by the other cross-fade layer.
-            val lens = lenses.firstOrNull { it.bitmap === bitmap }
-                ?: lenses.firstOrNull { it.bitmap !== other }
-                ?: lenses[0]
-            val sample = lens.use(bitmap)
-            sample.setLocalMatrix(mapBitmap(bitmap, placement, zoom))
-            val shader = lens.shader
-            // The runtime shader keeps the child as it was when set, so set it again after moving it.
-            shader.setInputShader("backdrop", sample)
-
-            // Lens geometry scales with the surface's short side, so small pills are not all rim.
-            val width = scope.size.width
-            val height = scope.size.height
-            val minSide = min(width, height)
-            val reference = REFERENCE_SIDE_DP * scope.density
-            shader.setFloatUniform("size", width, height)
-            shader.setFloatUniform("radius", radius)
-            shader.setFloatUniform("bevel", max(2f, min(BEVEL_MAX_PX, minSide * BEVEL_RATIO)))
-            shader.setFloatUniform("refractPx", min(REFRACT_MAX_PX, REFRACT_RATIO * minSide * min(1f, minSide / reference)))
-            shader.setFloatUniform("falloff", FALLOFF)
-            shader.setFloatUniform("dispersion", DISPERSION)
-            shader.setFloatUniform("lightDir", LIGHT_X, LIGHT_Y)
-            shader.setFloatUniform("spec", SPECULAR * (1f + 0.3f * focus))
-            shader.setFloatUniform("rimBandMax", max(2f, min(RIM_BAND_MAX_PX, minSide * RIM_BAND_RATIO)))
-            shader.setFloatUniform("saturation", VIBRANCY)
-            shader.setFloatUniform("tint", 1f, 1f, 1f, FOCUS_TINT * focus)
-            shader.setFloatUniform("adaptive", 1f)
-            shader.setFloatUniform("origin", placement.origin.x, placement.origin.y)
-            if (shade != null) {
-                shader.setFloatUniform("shadeX", shade.fromX, shade.toX, shade.alphaX, shade.uniform)
-                shader.setFloatUniform("shadeY", shade.fromY, shade.toY, shade.alphaY, 0f)
-            } else {
-                shader.setFloatUniform("shadeX", 0f, 1f, 0f, 0f)
-                shader.setFloatUniform("shadeY", 0f, 1f, 0f, 0f)
-            }
-            scope.drawPath(path, lens.brush, alpha = alpha)
-        }
+        scope.drawPath(look.path, brush)
     }
 
     private companion object {
@@ -401,7 +436,6 @@ private class BackdropSampler {
         const val REFRACT_MAX_PX = 160f
         const val REFRACT_RATIO = 0.7f
         const val REFERENCE_SIDE_DP = 110f
-        const val FALLOFF = 2f
         const val DISPERSION = 0.12f
         const val LIGHT_X = 0.866f
         const val LIGHT_Y = 0.5f

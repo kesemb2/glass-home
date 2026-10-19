@@ -34,6 +34,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
@@ -141,7 +142,10 @@ fun OverlayLayer(top: Boolean, dim: Float, content: @Composable BoxScope.(appear
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = if (ready) appear.value.coerceIn(0f, 1f) else 0f }
+                .graphicsLayer {
+                    alpha = if (ready) appear.value.coerceIn(0f, 1f) else 0f
+                    compositingStrategy = CompositingStrategy.ModulateAlpha
+                }
                 .drawBehind {
                     val image = snapshot
                     if (image != null) {
