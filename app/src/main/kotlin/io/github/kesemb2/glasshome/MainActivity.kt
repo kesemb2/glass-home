@@ -10,6 +10,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.CompositionLocalProvider
@@ -77,6 +78,16 @@ class MainActivity : ComponentActivity() {
         if (intent.isHomeIntent()) goHome()
         controller = HomeController(app, scope)
         apps = AppsController(app, scope, AppSettings(app))
+        // Back that arrives other than as a key (see dispatchKeyEvent) ends up in the same place. This is the
+        // home screen: Back never closes it.
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    nav.back.back()
+                }
+            },
+        )
         setContent {
             val typography = remember { GlassTypography.create(this) }
             CompositionLocalProvider(LocalGlassType provides typography) {
@@ -185,10 +196,10 @@ class MainActivity : ComponentActivity() {
             FocusTravel.record(event.keyCode)
             lastKeyAt.longValue = SystemClock.uptimeMillis()
         }
-        // Back goes straight to the home screen's own handling. Left to Compose, Back inside a scrolling list (the
-        // settings) only moves focus out of the list and is used up there, so the panel never closed.
-        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) onBackPressedDispatcher.onBackPressed()
+        // Back goes straight to the home screen's own handling (see HomeBack). Left to Compose, Back inside a
+        // scrolling list (the settings) only moves focus out of the list and is used up there.
+        if (event.keyCode == KeyEvent.KEYCODE_BACK || event.keyCode == KeyEvent.KEYCODE_ESCAPE) {
+            if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) nav.back.back()
             return true
         }
         return super.dispatchKeyEvent(event)

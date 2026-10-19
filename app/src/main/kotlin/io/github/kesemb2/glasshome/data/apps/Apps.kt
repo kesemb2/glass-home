@@ -35,12 +35,17 @@ sealed interface GridItem {
     }
 }
 
-/** What the home screen shows for a layout: apps that are not installed or not [shown] are left out. */
+/**
+ * What the home screen shows for a layout: apps that are not installed or not [shown] are left out, and apps on
+ * the favorites shelf are not repeated in the grid (they keep their grid place for when they leave the shelf).
+ */
 @Immutable
 data class HomeView(val favorites: List<AppEntry>, val grid: List<GridItem>) {
     companion object {
         fun of(layout: HomeLayout, apps: Map<String, AppEntry>, shown: (AppEntry) -> Boolean): HomeView {
             fun visible(pkg: String) = apps[pkg]?.takeIf(shown)
+            val favorites = layout.favorites.mapNotNull(::visible)
+            val onShelf = favorites.mapTo(HashSet()) { it.packageName }
             val grid = layout.grid.mapNotNull { key ->
                 val folderId = GridKey.folderId(key)
                 if (folderId != null) {
@@ -48,10 +53,10 @@ data class HomeView(val favorites: List<AppEntry>, val grid: List<GridItem>) {
                     val inside = folder.apps.mapNotNull(::visible)
                     if (inside.isEmpty()) null else GridItem.Folder(folder, inside)
                 } else {
-                    GridKey.packageOf(key)?.let(::visible)?.let { GridItem.App(it) }
+                    GridKey.packageOf(key)?.takeIf { it !in onShelf }?.let(::visible)?.let { GridItem.App(it) }
                 }
             }
-            return HomeView(layout.favorites.mapNotNull(::visible), grid)
+            return HomeView(favorites, grid)
         }
     }
 }

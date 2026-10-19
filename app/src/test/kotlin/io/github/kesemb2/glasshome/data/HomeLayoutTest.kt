@@ -1,6 +1,8 @@
 package io.github.kesemb2.glasshome.data
 
+import io.github.kesemb2.glasshome.data.apps.AppEntry
 import io.github.kesemb2.glasshome.data.apps.GridKey
+import io.github.kesemb2.glasshome.data.apps.HomeView
 import io.github.kesemb2.glasshome.data.apps.HomeLayout
 import io.github.kesemb2.glasshome.data.apps.moveAmongShown
 import org.junit.Assert.assertEquals
@@ -132,6 +134,18 @@ class HomeLayoutTest {
     fun moveInGridByARow() {
         val layout = fresh().moveInGrid(GridKey.app("a"), 5) { true }
         assertEquals(apps("b", "c", "d", "e", "f", "a", "g"), layout.grid)
+    }
+
+    @Test
+    fun favoritesAreNotRepeatedInTheGrid() {
+        val entries = installed.associateWith { AppEntry(it, "Main", it, tv = true, updatedAt = 0L) }
+        val starred = fresh().toggleFavorite("b")
+        val view = HomeView.of(starred, entries) { true }
+        assertEquals(listOf("b"), view.favorites.map { it.packageName })
+        assertEquals(apps("a", "c", "d", "e", "f", "g"), view.grid.map { it.key })
+        // Off the shelf, it is back where it was.
+        val back = HomeView.of(starred.toggleFavorite("b"), entries) { true }
+        assertEquals(apps("a", "b", "c", "d", "e", "f", "g"), back.grid.map { it.key })
     }
 
     @Test

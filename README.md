@@ -48,7 +48,10 @@ screen uses. Apps decide what they publish there.
 
 ## Home screen
 
-- **Favorites** sit on the glass shelf under Continue Watching; **all apps** are in the grid below (press Down).
+- **Favorites** sit on the glass shelf under Continue Watching; **the other apps** are in the grid below (press
+  Down). Rows wrap around: Right on the last card goes to the first, and back.
+- **Back** goes up one level (a settings page, a menu, a folder); anywhere else on the home screen it returns to
+  Continue Watching, like Home.
 - **Hold OK** on any app or folder for its menu: move, favorites, folders, hide, app info.
 - **Move**: choose Move, then use the arrows; OK or Back when done.
 - **Folders**: hold OK on an app → Add to Folder → New Folder (or an existing one). Open a folder with OK.

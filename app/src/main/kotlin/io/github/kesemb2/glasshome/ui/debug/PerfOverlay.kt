@@ -6,6 +6,7 @@ import android.os.Debug
 import android.os.Handler
 import android.os.HandlerThread
 import android.view.FrameMetrics
+import android.view.KeyEvent
 import android.view.Window
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -27,6 +28,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import io.github.kesemb2.glasshome.ui.motion.FocusTravel
 import io.github.kesemb2.glasshome.ui.theme.LocalGlassType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -35,8 +37,8 @@ import java.util.Locale
 
 /**
  * Rendered frames over the last second (from the window's frame metrics, so an idle screen honestly shows ~0),
- * slow frames, the 95th-percentile frame time and the process's memory (PSS). Only runs while the setting is on;
- * its own text updates once a second.
+ * slow frames, the 95th-percentile frame time, the process's memory (PSS) and the last remote key (to tell what
+ * a remote's button sends). Only runs while the setting is on; its own text updates once a second.
  */
 @Composable
 fun PerfOverlay(modifier: Modifier = Modifier) {
@@ -70,8 +72,9 @@ fun PerfOverlay(modifier: Modifier = Modifier) {
             val frames = stats.summary(System.nanoTime())
             text = String.format(
                 Locale.US,
-                "%d fps · %d slow · p95 %.1f ms\n%s",
+                "%d fps · %d slow · p95 %.1f ms\n%s\nkey %s",
                 frames.fps, frames.slow, frames.p95Millis, memory,
+                KeyEvent.keyCodeToString(FocusTravel.lastKeyCode).removePrefix("KEYCODE_"),
             )
             delay(1_000)
         }

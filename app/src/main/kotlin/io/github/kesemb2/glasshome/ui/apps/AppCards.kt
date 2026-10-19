@@ -25,13 +25,19 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.ImageShader
+import androidx.compose.ui.graphics.LinearGradientShader
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shader
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
@@ -152,17 +158,20 @@ fun GridCard(
 @Composable
 fun CardFace(item: GridItem, visuals: AppVisuals, focus: () -> Float) {
     when (item) {
-        is GridItem.App -> AppFace(item.app, visuals[item.app.packageName], visuals.placeholder(item.app.packageName))
+        is GridItem.App -> AppFace(item.app, visuals[item.app.packageName], visuals.placeholder(item.app.packageName), focus)
         is GridItem.Folder -> FolderFace(item, visuals, focus)
     }
 }
 
-/** The card itself: the TV banner, or the icon and name on the icon's dominant colour. */
+/**
+ * The card itself: the TV banner, or the icon and name on the icon's dominant colour; both under a glass sheen
+ * and rim ([CardGlass]), brighter while [focus] is 1.
+ */
 @Composable
-fun AppFace(app: AppEntry, visual: AppVisual?, placeholder: Color, modifier: Modifier = Modifier) {
+fun AppFace(app: AppEntry, visual: AppVisual?, placeholder: Color, focus: () -> Float, modifier: Modifier = Modifier) {
     val banner = visual?.banner
     if (banner != null) {
-        Box(modifier.fillMaxSize().drawImageCard(banner))
+        Box(modifier.fillMaxSize().drawImageCard(banner, focus).cardRim(focus))
         return
     }
     val type = LocalGlassType.current
@@ -174,8 +183,11 @@ fun AppFace(app: AppEntry, visual: AppVisual?, placeholder: Color, modifier: Mod
             .fillMaxSize()
             .drawWithCache {
                 val path = Shapes.Card.createOutline(size, layoutDirection, this).asPath()
-                onDrawBehind { drawPath(path, color) }
-            },
+                val plain = CardGlass.sheenOver(color, size, CardGlass.SHEEN)
+                val lit = CardGlass.sheenOver(color, size, CardGlass.SHEEN_FOCUSED)
+                onDrawBehind { drawPath(path, if (focus() >= 0.5f) lit else plain) }
+            }
+            .cardRim(focus),
     ) {
         val icon = visual?.icon
         if (icon != null) {
@@ -258,14 +270,80 @@ private fun FolderFace(item: GridItem.Folder, visuals: AppVisuals, focus: () -> 
 
 private class Tile(val rect: Rect, val path: Path, val visual: AppVisual?, val placeholder: Color)
 
-/** Draws [image] filling the card shape (anti-aliased edges, unlike a clip). */
-private fun Modifier.drawImageCard(image: ImageBitmap): Modifier = drawWithCache {
+/**
+ * Draws [image] filling the card shape (anti-aliased edges, unlike a clip), with the glass sheen composed into the
+ * same draw.
+ */
+private fun Modifier.drawImageCard(image: ImageBitmap, focus: () -> Float): Modifier = drawWithCache {
     val path = Shapes.Card.createOutline(size, layoutDirection, this).asPath()
-    val brush = imageBrush(image, Rect(Offset.Zero, size))
-    onDrawBehind { drawPath(path, brush) }
+    val shader = imageShader(image, Rect(Offset.Zero, size))
+    val plain = ShaderBrush(CardGlass.sheenOver(shader, size, CardGlass.SHEEN))
+    val lit = ShaderBrush(CardGlass.sheenOver(shader, size, CardGlass.SHEEN_FOCUSED))
+    onDrawBehind { drawPath(path, if (focus() >= 0.5f) lit else plain) }
 }
 
-private fun imageBrush(image: ImageBitmap, into: Rect): ShaderBrush {
+/** The glass rim of [CardGlass], drawn over the card. */
+private fun Modifier.cardRim(focus: () -> Float): Modifier = drawWithCache {
+    val width = CardGlass.RIM_WIDTH.toPx()
+    val inset = Shapes.Card.createOutline(Size(size.width - width, size.height - width), layoutDirection, this).asPath()
+    val brush = CardGlass.rim(size)
+    val stroke = Stroke(width)
+    onDrawWithContent {
+        drawContent()
+        val alpha = CardGlass.RIM_ALPHA + (1f - CardGlass.RIM_ALPHA) * focus().coerceIn(0f, 1f)
+        translate(width / 2f, width / 2f) { drawPath(inset, brush, alpha = alpha, style = stroke) }
+    }
+}
+
+/**
+ * Glass on every app card, after tvOS: a soft sheen falling from the top (light from the top left, like the
+ * glass rim light), a little stronger on the focused card, and a hairline rim lit at the top-left corner with a
+ * fainter reflection at the opposite one (dimmer while not focused). The sheen is part of the card's own draw, so
+ * it costs no extra pass over the screen; the rim is a thin stroke.
+ */
+private object CardGlass {
+    const val SHEEN = 0.10f
+    const val SHEEN_FOCUSED = 0.16f
+    val RIM_WIDTH = 1.dp
+    const val RIM_ALPHA = 0.65f
+
+    private fun sheenStart(size: Size) = Offset(size.width * 0.15f, 0f)
+
+    private fun sheenEnd(size: Size) = Offset(size.width * 0.4f, size.height * 0.62f)
+
+    /** [image] with the sheen over it, in one shader. */
+    fun sheenOver(image: Shader, size: Size, alpha: Float): Shader = android.graphics.ComposeShader(
+        image,
+        LinearGradientShader(
+            from = sheenStart(size),
+            to = sheenEnd(size),
+            colors = listOf(Color.White.copy(alpha = alpha), Color.White.copy(alpha = alpha * 0.3f), Color.Transparent),
+            colorStops = listOf(0f, 0.45f, 1f),
+        ),
+        android.graphics.PorterDuff.Mode.SRC_OVER,
+    )
+
+    /** A solid [color] with the sheen over it, as one gradient. */
+    fun sheenOver(color: Color, size: Size, alpha: Float): Brush = Brush.linearGradient(
+        0f to lerp(color, Color.White, alpha),
+        0.45f to lerp(color, Color.White, alpha * 0.3f),
+        1f to color,
+        start = sheenStart(size),
+        end = sheenEnd(size),
+    )
+
+    fun rim(size: Size): Brush = Brush.linearGradient(
+        0f to Color.White.copy(alpha = 0.55f),
+        0.28f to Color.White.copy(alpha = 0.14f),
+        0.5f to Color.Transparent,
+        0.72f to Color.White.copy(alpha = 0.05f),
+        1f to Color.White.copy(alpha = 0.24f),
+        start = Offset.Zero,
+        end = Offset(size.width, size.height),
+    )
+}
+
+private fun imageShader(image: ImageBitmap, into: Rect): Shader {
     val shader = ImageShader(image)
     shader.setLocalMatrix(
         android.graphics.Matrix().apply {
@@ -273,8 +351,10 @@ private fun imageBrush(image: ImageBitmap, into: Rect): ShaderBrush {
             postTranslate(into.left, into.top)
         },
     )
-    return ShaderBrush(shader)
+    return shader
 }
+
+private fun imageBrush(image: ImageBitmap, into: Rect): ShaderBrush = ShaderBrush(imageShader(image, into))
 
 private fun DrawScope.drawFitted(image: ImageBitmap) {
     drawImage(

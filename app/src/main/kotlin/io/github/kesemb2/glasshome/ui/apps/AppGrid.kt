@@ -21,11 +21,13 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.kesemb2.glasshome.R
 import io.github.kesemb2.glasshome.data.apps.AppEntry
@@ -38,24 +40,38 @@ import io.github.kesemb2.glasshome.ui.theme.LocalGlassType
 import io.github.kesemb2.glasshome.ui.theme.Shapes
 import io.github.kesemb2.glasshome.ui.theme.Springs
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
  * Cells in rows of [columns] at a fixed pitch (start-aligned, mirrored in RTL). Cells are keyed by item, so a
- * reordered cell keeps its focus and slides to its new place.
+ * reordered cell keeps its focus and slides to its new place. Each row wraps around: past its last cell focus goes
+ * to its first ([focusItem] moves it), and back.
  */
 @Composable
 fun CardGrid(
     items: List<GridItem>,
+    focusItem: (GridItem) -> Boolean,
     modifier: Modifier = Modifier,
     cell: @Composable (item: GridItem) -> Unit,
 ) {
     val size = LocalCardSize.current
     val columns = size.columns
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Layout(
         content = {
-            items.forEach { item ->
-                key(item.key) { Box(Modifier.animatePlacement()) { cell(item) } }
+            items.forEachIndexed { index, item ->
+                key(item.key) {
+                    val rowStart = index / columns * columns
+                    val rowEnd = min(rowStart + columns, items.size) - 1
+                    Box(
+                        Modifier
+                            .animatePlacement()
+                            .wrapAround(rtl, index == rowStart, index == rowEnd) { toEnd ->
+                                focusItem(items[if (toEnd) rowEnd else rowStart])
+                            },
+                    ) { cell(item) }
+                }
             }
         },
         modifier = modifier,
@@ -74,6 +90,24 @@ fun CardGrid(
     }
 }
 
+/**
+ * Wrap-around for a row of cards: "next" (Right, Left in RTL) on the [last] card calls [wrap] with false (go to
+ * the first), "previous" on the [first] with true (go to the last).
+ */
+internal fun Modifier.wrapAround(rtl: Boolean, first: Boolean, last: Boolean, wrap: (toEnd: Boolean) -> Boolean): Modifier {
+    if (!first && !last) return this
+    return onPreviewKeyEvent { event ->
+        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+        val next = if (rtl) Key.DirectionLeft else Key.DirectionRight
+        val previous = if (rtl) Key.DirectionRight else Key.DirectionLeft
+        when {
+            last && event.key == next -> wrap(false)
+            first && event.key == previous -> wrap(true)
+            else -> false
+        }
+    }
+}
+
 /** Grid rows needed for [count] cells. */
 fun gridRows(count: Int, columns: Int): Int = (count + columns - 1) / columns
 
@@ -86,8 +120,9 @@ object ShelfMetrics {
 }
 
 /**
- * The favorites shelf: a glass tray holding five cards at a time; it scrolls when focus moves past either end.
- * Cards outside the window fade out instead of being clipped, so the focused card's lift is never cut off.
+ * The favorites shelf: a glass tray holding a row of cards at a time; it scrolls when focus moves past either end.
+ * Cards outside the window fade out instead of being clipped, so the focused card's lift is never cut off. Past
+ * the last card focus wraps around to the first ([focusApp] moves it), and back.
  */
 @Composable
 fun FavoritesShelf(
@@ -96,6 +131,7 @@ fun FavoritesShelf(
     focusedPkg: String?,
     movingPkg: String?,
     focusModifier: (AppEntry) -> Modifier,
+    focusApp: (AppEntry) -> Boolean,
     onFocused: (AppEntry) -> Unit,
     onClick: (AppEntry) -> Unit,
     onMenu: (AppEntry, Rect) -> Unit,
@@ -103,6 +139,7 @@ fun FavoritesShelf(
     modifier: Modifier = Modifier,
 ) {
     val type = LocalGlassType.current
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val window = remember { IntArray(1) }
     val size = LocalCardSize.current
     val visibleCount = size.columns
@@ -144,7 +181,14 @@ fun FavoritesShelf(
                     key(app.packageName) {
                         val shown = index in start until start + visibleCount
                         val alpha by animateFloatAsState(if (shown) 1f else 0f, Springs.focus(), label = "shelfAlpha")
-                        Box(Modifier.animatePlacement().graphicsLayer { this.alpha = alpha }) {
+                        Box(
+                            Modifier
+                                .animatePlacement()
+                                .graphicsLayer { this.alpha = alpha }
+                                .wrapAround(rtl, index == 0, index == apps.lastIndex) { toEnd ->
+                                    focusApp(if (toEnd) apps.last() else apps.first())
+                                },
+                        ) {
                             GridCard(
                                 item = GridItem.App(app),
                                 visuals = visuals,

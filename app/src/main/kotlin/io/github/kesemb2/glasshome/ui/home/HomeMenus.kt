@@ -62,7 +62,8 @@ fun menuContent(context: Context, menu: Overlay.Menu, view: HomeView, apps: Apps
                     app.label,
                     listOf(
                         move(MoveArea.Grid, key, GRID_PREFIX + key),
-                        favorite(app),
+                        // A favorite leaves the grid for the shelf; focus stays in the grid.
+                        favorite(app, restore = gridNeighbour(key) ?: SHELF_PREFIX + app.packageName),
                         MenuAction(R.drawable.ic_folder_new, s(R.string.menu_add_to_folder)) {
                             nav.replaceTop(menu.copy(page = MenuPage.Folders))
                         },

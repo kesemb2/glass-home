@@ -62,7 +62,13 @@ object FocusTravel {
     var last: Direction = Direction.None
         private set
 
+    /** The last key pressed, for the performance overlay. */
+    @Volatile
+    var lastKeyCode: Int = AndroidKeyEvent.KEYCODE_UNKNOWN
+        private set
+
     fun record(keyCode: Int) {
+        lastKeyCode = keyCode
         last = when (keyCode) {
             AndroidKeyEvent.KEYCODE_DPAD_LEFT -> Direction.Left
             AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> Direction.Right

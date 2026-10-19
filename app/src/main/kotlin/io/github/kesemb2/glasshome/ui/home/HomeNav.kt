@@ -88,6 +88,9 @@ class HomeNav {
     /** A settings page to open again when the home screen comes back (after a trip to the TV's own settings). */
     var reopenSettings: SettingsPage? = null
 
+    /** Back, handed over by the activity (see [HomeBack]). */
+    val back = HomeBack()
+
     private var nextId = 1
     private val requesters = HashMap<String, FocusRequester>()
     private val attached = HashMap<String, Int>()

@@ -1,7 +1,6 @@
 package io.github.kesemb2.glasshome.ui.hero
 
 import android.os.SystemClock
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -100,6 +99,7 @@ import io.github.kesemb2.glasshome.ui.glass.glass
 import io.github.kesemb2.glasshome.ui.glass.glassShadow
 import io.github.kesemb2.glasshome.ui.home.AccessState
 import io.github.kesemb2.glasshome.ui.home.HeroUiState
+import io.github.kesemb2.glasshome.ui.home.HomeBackHandler
 import io.github.kesemb2.glasshome.ui.theme.GlassColors
 import io.github.kesemb2.glasshome.ui.theme.LocalGlassType
 import io.github.kesemb2.glasshome.ui.theme.Shapes
@@ -266,7 +266,7 @@ fun HeroScreen(
         }
     }
 
-    BackHandler(enabled = menuOpen) { menuOpen = false }
+    HomeBackHandler(enabled = menuOpen) { menuOpen = false }
 
     Box(
         Modifier

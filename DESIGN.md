@@ -73,6 +73,10 @@ content titles) renders in it while digits and Latin stay in Inter.
 - Card images are rendered once at the size they are shown at (banners 320 × 180 px, icons 96 px) and moved to GPU
   memory (hardware bitmaps); they are dropped when the home screen is hidden. Edges are anti-aliased by filling the
   card shape with an image shader rather than clipping.
+- Card glass (every app card, after tvOS): a sheen falling from the top-left (white 10% → 3% → 0 over the top
+  ~60%, 16% on the focused card), composed into the card's own image shader (or baked into the fallback's fill
+  gradient), so it costs no extra pass; and a 1 dp rim lit at the top-left corner (white 55%) with a fainter
+  reflection at the bottom-right (24%), at 65% strength until focused.
 
 ## Liquid glass (cheap on Mali-G31)
 
@@ -198,10 +202,13 @@ Springs everywhere; never linear tweens.
   a sharp copy of the card stays lifted over the blur.
 - **Folders**: open full screen over the blurred home screen (scale 0.94 → 1 and fade).
 - **Home**: from anywhere (the system's home intent or the Home helper) closes every overlay and returns to Play
-  with the camera at the top. Back at the top does nothing: this is the home screen.
-- **Settings**: a glass panel slides in from the end edge. Back on a sub-page returns to the main page with focus
-  on that page's row; Back on the main page closes the panel. (Back is routed straight to the home screen's
-  handler, before Compose's focus system, which would otherwise spend it moving focus out of the scrolling list.)
+  with the camera at the top.
+- **Back** steps out one level: move mode, then a menu's or settings' sub-page (to its main page, focus on the row
+  that opened it), then the menu, folder or settings panel; on the home screen itself (shelf, grid, top bar) it
+  returns to Play like Home, and on Play it does nothing: this is the home screen. The activity takes the Back
+  key before anything else and hands it to the screen's own handlers (`HomeBack`): Compose would spend it moving
+  focus out of a scrolling list, and the system back dispatcher did not reliably reach the screen.
+- **Settings**: a glass panel slides in from the end edge.
 - **Focus shine**: the tilt and the light sweep run to the end on the element that started them, even after focus
   has moved on.
 - **Move mode**: the card wiggles slightly (±1.6°, eased, 140 ms per swing) while the D-pad moves it and its
@@ -233,14 +240,15 @@ The page, top to bottom (960 × 540 dp screen):
   fade out rather than being clipped, so the focused card's lift is never cut. No labels (banners carry the name).
 - **App grid**: starts 80 dp below the hero (so no part of the shelf shows above the grid); cards 16 dp apart, row
   pitch card + 36 dp; the focused card's name appears 10 dp below it. On screen the first row sits 96 dp from the
-  top.
+  top. Favorites are not repeated in the grid; an app that leaves the shelf is back in its old grid place.
 - **Fixed top bar**: round glass settings button (34 dp) and the clock pill at the top-end corner.
 
 Focus moves geometrically, with explicit links where the layout needs them: Down from Play → the last focused
 favorite; Down from a favorite → the grid card below it; Up from the first grid row → the last focused favorite;
 Up from Play or the shelf → settings; Down from settings → wherever focus was. Back from the grid or the shelf
-returns to Play. When the focused element disappears (hidden, moved into a folder, uninstalled), focus goes to its
-neighbour, never to nothing.
+returns to Play. Rows wrap around: past the last card of the shelf or of a grid (or folder) row, focus goes to
+the first card of that row, and back. When the focused element disappears (hidden, moved into a folder or onto
+the shelf, uninstalled), focus goes to its neighbour, never to nothing.
 
 Hold OK opens the card's menu: apps — Move, Add to/Remove from Favorites, Add to Folder (existing folders + New
 Folder), Hide, App Info; folders — Move, Remove Folder (its apps take its place); apps in a folder — Move, Remove
@@ -252,4 +260,5 @@ through `LauncherApps` callbacks while the launcher is visible. First run fills 
 (known streaming apps first).
 
 A **performance overlay** (setting) shows rendered frames in the last second (from the window's frame metrics, so
-an idle screen reads ~0), slow frames (> 16.7 ms), the 95th-percentile frame time and the process PSS.
+an idle screen reads ~0), slow frames (> 16.7 ms), the 95th-percentile frame time, the process PSS and the last
+remote key received (to see what a remote's button sends).

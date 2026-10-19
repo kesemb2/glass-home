@@ -14,7 +14,8 @@ data class AppFolder(val id: String, val name: String, val apps: List<String>)
  * contents and hidden apps. Apps are identified by package name; grid entries are [GridKey]s.
  *
  * Every launchable app on the device has a place: in the grid, in exactly one folder, or hidden. Favorites are
- * a separate list of shortcuts, so a favorite also keeps its place in the grid. Pure and immutable: every edit
+ * a separate list, so a favorite also keeps its place in the grid (not shown there while it is a favorite, see
+ * [HomeView], and back in that place when it leaves the shelf). Pure and immutable: every edit
  * returns a new layout. Edits that take a `shown` filter work on what is on screen, so apps that are not
  * shown (phone apps while that setting is off) keep their place without getting in the way.
  */

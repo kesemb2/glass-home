@@ -1,6 +1,5 @@
 package io.github.kesemb2.glasshome.ui.home
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -127,7 +126,7 @@ fun HomeScreen(
         if (visible) {
             DisposableEffect(Unit) { onDispose { nav.closeAll() } }
             val backdrop = remember { GlassBackdrop() }
-            CompositionLocalProvider(LocalGlassBackdrop provides backdrop) {
+            CompositionLocalProvider(LocalGlassBackdrop provides backdrop, LocalHomeBack provides nav.back) {
                 HomeContent(controller, apps, nav, homeSetup, homeSignal, resumed, lastKeyAt, onPlay, onRequestAccess, onLanguage)
             }
         }
@@ -178,18 +177,15 @@ private fun HomeContent(
         if (!focusHero()) focusShelf()
     }
 
-    // Always handled: this is the home screen, so Back never leaves it.
-    BackHandler {
+    // Always handled: this is the home screen, so Back never leaves it. Back steps out of move mode, a menu or
+    // settings page, then an overlay; on the home screen itself it returns to Continue Watching, like Home.
+    HomeBackHandler {
+        val top = nav.overlays.lastOrNull()
         when {
-            moving != null -> nav.moving = null
-            overlaysOpen -> {
-                val top = nav.overlays.lastOrNull()
-                when {
-                    top is Overlay.Menu && top.page != MenuPage.Main -> nav.replaceTop(top.copy(page = MenuPage.Main))
-                    top is Overlay.Settings && top.page != SettingsPage.Main -> nav.replaceTop(top.copy(page = SettingsPage.Main))
-                    else -> nav.closeTop()
-                }
-            }
+            nav.moving != null -> nav.moving = null
+            top is Overlay.Menu && top.page != MenuPage.Main -> nav.replaceTop(top.copy(page = MenuPage.Main))
+            top is Overlay.Settings && top.page != SettingsPage.Main -> nav.replaceTop(top.copy(page = SettingsPage.Main))
+            top != null -> nav.closeTop()
             else -> focusHero() || focusShelf()
         }
     }
@@ -333,6 +329,7 @@ private fun HomeContent(
                     focusedPkg = nav.shelfPkg,
                     movingPkg = (moving?.takeIf { it.area == MoveArea.Favorites })?.key,
                     focusModifier = { app -> Modifier.focusKey(nav, SHELF_PREFIX + app.packageName) },
+                    focusApp = { app -> nav.focus(SHELF_PREFIX + app.packageName) },
                     onFocused = { app ->
                         nav.shelfPkg = app.packageName
                         nav.focused(SHELF_PREFIX + app.packageName, Area.Shelf)
@@ -358,6 +355,7 @@ private fun HomeContent(
                 CompositionLocalProvider(LocalGlassBackdrop provides gridGlass, LocalGlassScroll provides null) {
                 CardGrid(
                     items = view.grid,
+                    focusItem = { item -> nav.focus(GRID_PREFIX + item.key) },
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .offset(y = gridTop)
@@ -580,6 +578,7 @@ private fun FolderLayer(
             ) {
                 CardGrid(
                     items = folder.apps.map { GridItem.App(it) },
+                    focusItem = { item -> nav.focus(FOLDER_PREFIX + (item as GridItem.App).app.packageName) },
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = 12.dp)
