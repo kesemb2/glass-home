@@ -71,6 +71,16 @@
     <string name="settings_logo_size_hint">Continue Watching logo or title</string>
     <string name="settings_text_size">Details text size</string>
     <string name="settings_text_size_hint">Episode line, synopsis and time left</string>
+    <string name="settings_scrim">Gradient color</string>
+    <string name="settings_scrim_hint">Shading behind the Continue Watching text</string>
+    <string name="scrim_black">Black</string>
+    <string name="scrim_image">From the image</string>
+    <string name="scrim_blue">Blue</string>
+    <string name="scrim_purple">Purple</string>
+    <string name="scrim_green">Green</string>
+    <string name="scrim_red">Red</string>
+    <string name="scrim_teal">Teal</string>
+    <string name="scrim_brown">Brown</string>
     <string name="size_large">Large</string>
     <string name="size_medium">Medium</string>
     <string name="size_small">Small</string>

@@ -26,12 +26,15 @@ uniform float brightness;  // -1..1, 0 = unchanged
 uniform float2 origin;     // this surface's top-left on screen, px
 uniform float4 shadeX;     // screen scrim, horizontal ramp: (from x, to x, alpha at from, even darkening)
 uniform float4 shadeY;     // screen scrim, vertical ramp: (from y, to y, alpha at to, 0)
+uniform float3 shadeColor; // the scrims' colour (black or a dark tone)
 
-// The screen's scrims at screen position s, as the fraction of light they let through.
-half through(float2 s) {
+// The screen's scrims at screen position s over colour col: they let a fraction of the light through and add
+// their own colour for the rest, like stacked scrims of one colour.
+half3 scrim(half3 col, float2 s) {
     float ax = shadeX.z * clamp((s.x - shadeX.y) / (shadeX.x - shadeX.y), 0.0, 1.0);
     float ay = shadeY.z * clamp((s.y - shadeY.x) / (shadeY.y - shadeY.x), 0.0, 1.0);
-    return half((1.0 - ax) * (1.0 - ay) * (1.0 - shadeX.w));
+    half through = half((1.0 - ax) * (1.0 - ay) * (1.0 - shadeX.w));
+    return mix(half3(shadeColor), col, through);
 }
 
 // Vibrancy (low-saturation colours lifted more than saturated ones, highlights protected), then the adaptive
@@ -73,7 +76,7 @@ half4 main(float2 coord) {
 
     // Flat interior: nothing bends and no rim light reaches it, so one sample is enough.
     if (depth >= max(bevel, bandW + 4.0)) {
-        half3 inner = backdrop.eval(coord).rgb * through(coord + origin);
+        half3 inner = scrim(backdrop.eval(coord).rgb, coord + origin);
         return half4(finish(inner), 1.0);
     }
 
@@ -98,7 +101,7 @@ half4 main(float2 coord) {
     } else {
         col = backdrop.eval(cG).rgb;
     }
-    col = finish(col * through(cG + origin));
+    col = finish(scrim(col, cG + origin));
 
     // Rim light from the same normals: two equal lobes (lit side and the inner reflection opposite), a 2 px
     // hairline just inside the edge, and a soft glow inward on the lit side only. No constant outline.

@@ -65,7 +65,7 @@ import kotlin.math.roundToInt
 /**
  * Screen-space darkening behind glass (for example the hero's scrims): a horizontal ramp from [alphaX] at [fromX]
  * to 0 at [toX], a vertical ramp from 0 at [fromY] to [alphaY] at [toY], and an even [uniform] darkening, stacked
- * like three scrims.
+ * like three scrims of [color] (opaque; black or a dark tone).
  */
 @Immutable
 data class GlassShade(
@@ -76,22 +76,23 @@ data class GlassShade(
     val toY: Float,
     val alphaY: Float,
     val uniform: Float = 0f,
+    val color: Color = Color.Black,
 ) {
     /** The same ramps as brushes, in the coordinates of a surface whose origin is at ([dx], [dy]). */
     fun brushes(dx: Float = 0f, dy: Float = 0f): List<Brush> = listOfNotNull(
         Brush.horizontalGradient(
-            0f to Color.Black.copy(alpha = alphaX),
+            0f to color.copy(alpha = alphaX),
             1f to Color.Transparent,
             startX = fromX - dx,
             endX = toX - dx,
         ),
         Brush.verticalGradient(
             0f to Color.Transparent,
-            1f to Color.Black.copy(alpha = alphaY),
+            1f to color.copy(alpha = alphaY),
             startY = fromY - dy,
             endY = toY - dy,
         ),
-        if (uniform > 0f) SolidColor(Color.Black.copy(alpha = uniform)) else null,
+        if (uniform > 0f) SolidColor(color.copy(alpha = uniform)) else null,
     )
 }
 
@@ -621,9 +622,11 @@ private class Lens(source: String) {
         if (shade != null) {
             shader.setFloatUniform("shadeX", shade.fromX, shade.toX, shade.alphaX, shade.uniform)
             shader.setFloatUniform("shadeY", shade.fromY, shade.toY, shade.alphaY, 0f)
+            shader.setFloatUniform("shadeColor", shade.color.red, shade.color.green, shade.color.blue)
         } else {
             shader.setFloatUniform("shadeX", 0f, 1f, 0f, 0f)
             shader.setFloatUniform("shadeY", 0f, 1f, 0f, 0f)
+            shader.setFloatUniform("shadeColor", 0f, 0f, 0f)
         }
         scope.drawPath(look.path, brush)
     }

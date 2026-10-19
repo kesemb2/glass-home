@@ -113,6 +113,9 @@ fun Modifier.focusEffect(focused: Boolean, pressed: Boolean, style: FocusStyle, 
     val tiltY = remember { Animatable(0f) }
     val tiltX = remember { Animatable(0f) }
     val sweep = remember { Animatable(1f) }
+    // The tilt and the sweep run in the element's own scope, not the focus effect's: moving on before they end
+    // lets them finish on this element instead of freezing half way.
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(focused) {
         if (!focused) return@LaunchedEffect
@@ -123,16 +126,16 @@ fun Modifier.focusEffect(focused: Boolean, pressed: Boolean, style: FocusStyle, 
             FocusTravel.Direction.Down -> -style.tiltDegrees to 0f
             FocusTravel.Direction.None -> 0f to 0f
         }
-        launch {
+        scope.launch {
             tiltY.snapTo(y)
             tiltY.animateTo(0f, Springs.focus())
         }
-        launch {
+        scope.launch {
             tiltX.snapTo(x)
             tiltX.animateTo(0f, Springs.focus())
         }
         if (style.sweep) {
-            launch {
+            scope.launch {
                 sweep.snapTo(0f)
                 sweep.animateTo(1f, Springs.sweep())
             }

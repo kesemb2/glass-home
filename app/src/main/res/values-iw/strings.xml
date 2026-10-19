@@ -67,6 +67,16 @@
     <string name="settings_logo_size_hint">הלוגו או השם ב״המשך צפייה״</string>
     <string name="settings_text_size">גודל טקסט הפרטים</string>
     <string name="settings_text_size_hint">שורת הפרק, התקציר והזמן שנותר</string>
+    <string name="settings_scrim">צבע הגרדיאנט</string>
+    <string name="settings_scrim_hint">ההצללה מאחורי הטקסט ב״המשך צפייה״</string>
+    <string name="scrim_black">שחור</string>
+    <string name="scrim_image">לפי התמונה</string>
+    <string name="scrim_blue">כחול</string>
+    <string name="scrim_purple">סגול</string>
+    <string name="scrim_green">ירוק</string>
+    <string name="scrim_red">אדום</string>
+    <string name="scrim_teal">טורקיז</string>
+    <string name="scrim_brown">חום</string>
     <string name="size_large">גדול</string>
     <string name="size_medium">בינוני</string>
     <string name="size_small">קטן</string>

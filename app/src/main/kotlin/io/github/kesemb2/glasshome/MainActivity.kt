@@ -185,6 +185,12 @@ class MainActivity : ComponentActivity() {
             FocusTravel.record(event.keyCode)
             lastKeyAt.longValue = SystemClock.uptimeMillis()
         }
+        // Back goes straight to the home screen's own handling. Left to Compose, Back inside a scrolling list (the
+        // settings) only moves focus out of the list and is used up there, so the panel never closed.
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) onBackPressedDispatcher.onBackPressed()
+            return true
+        }
         return super.dispatchKeyEvent(event)
     }
 

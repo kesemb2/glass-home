@@ -65,12 +65,10 @@ import io.github.kesemb2.glasshome.ui.components.ClockPill
 import io.github.kesemb2.glasshome.ui.components.GlassIconButton
 import io.github.kesemb2.glasshome.ui.debug.PerfOverlay
 import io.github.kesemb2.glasshome.ui.glass.GlassBackdrop
-import io.github.kesemb2.glasshome.ui.glass.GlassShade
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassBackdrop
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassLive
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassStyle
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassScroll
-import io.github.kesemb2.glasshome.ui.hero.GRID_DIM
 import io.github.kesemb2.glasshome.ui.hero.HeroScreen
 import io.github.kesemb2.glasshome.ui.home.HomeNav.Companion.FOLDER_PREFIX
 import io.github.kesemb2.glasshome.ui.home.HomeNav.Companion.GRID_PREFIX
@@ -252,10 +250,8 @@ private fun HomeContent(
         val gridAmount by animateFloatAsState(if (target > 0f) 1f else 0f, Springs.content(), label = "grid")
         // Glass on the page samples the backdrop as if the page were at rest (see LocalGlassScroll).
         val glassScroll: () -> Float = remember(cameraState) { { cameraState.value.roundToInt().toFloat() } }
-        // Glass in the grid refracts the grid's own blurred, darkened backdrop.
-        val gridGlass = remember {
-            GlassBackdrop().apply { shade = { GlassShade(0f, 1f, 0f, 0f, 1f, 0f, uniform = GRID_DIM) } }
-        }
+        // Glass in the grid refracts the grid's own blurred, darkened backdrop (the hero sets its darkening).
+        val gridGlass = remember { GlassBackdrop() }
         // While an overlay fully covers the screen, nothing under it is drawn.
         var coverCount by remember { mutableIntStateOf(0) }
         val onCovering: (Boolean) -> Unit = remember { { covering -> if (covering) coverCount++ else coverCount-- } }
@@ -309,6 +305,7 @@ private fun HomeContent(
                     contentBottom = Spacing.ScreenVertical + shelfHeight + HERO_SHELF_GAP,
                     logoScale = settings.logoPercent / 100f,
                     textScale = settings.textPercent / 100f,
+                    scrimColor = settings.scrimColor,
                     gridGlass = gridGlass,
                     backdropLayer = backdropLayer,
                     focusModifier = heroFocus,

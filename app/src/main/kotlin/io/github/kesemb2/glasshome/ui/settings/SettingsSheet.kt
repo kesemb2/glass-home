@@ -40,6 +40,7 @@ import io.github.kesemb2.glasshome.ui.apps.CardSize
 import io.github.kesemb2.glasshome.ui.components.MenuRow
 import io.github.kesemb2.glasshome.ui.glass.glass
 import io.github.kesemb2.glasshome.ui.glass.glassShadow
+import io.github.kesemb2.glasshome.ui.hero.ScrimColors
 import io.github.kesemb2.glasshome.ui.home.AppsController
 import io.github.kesemb2.glasshome.ui.home.HomeSetup
 import io.github.kesemb2.glasshome.ui.home.SettingsPage
@@ -62,6 +63,9 @@ fun SettingsSheet(
 ) {
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val slidePx = with(LocalDensity.current) { 48.dp.toPx() } * (if (rtl) -1f else 1f)
+    // The page shown before this one: back on the main page, focus returns to the row that opened it.
+    val last = remember { arrayOfNulls<SettingsPage>(1) }
+    val from = remember(page) { last[0].also { last[0] = page } }
     OverlayLayer(top = top, dim = 0.3f, onCovering = onCovering) { appear ->
         Column(
             Modifier
@@ -76,7 +80,7 @@ fun SettingsSheet(
         ) {
             key(page) {
                 when (page) {
-                    SettingsPage.Main -> MainPage(apps, homeSetup, onPage)
+                    SettingsPage.Main -> MainPage(apps, homeSetup, from, onPage)
                     SettingsPage.Home -> HomePage(apps.settings, homeSetup)
                     SettingsPage.Language -> LanguagePage(apps.settings.language, onLanguage)
                     SettingsPage.Glass -> GlassPage(apps.settings)
@@ -103,20 +107,29 @@ private fun ColumnScope.Title(text: String) {
 @Composable
 private fun rememberFirstFocus(key: Any = Unit): FocusRequester {
     val first = remember { FocusRequester() }
-    LaunchedEffect(key) {
-        try {
-            first.requestFocus()
-        } catch (_: IllegalStateException) {
-            // Nothing focusable on this page.
-        }
-    }
+    LaunchedEffect(key) { first.tryFocus() }
     return first
 }
 
+private fun FocusRequester.tryFocus() {
+    try {
+        requestFocus()
+    } catch (_: IllegalStateException) {
+        // Nothing focusable on this page.
+    }
+}
+
 @Composable
-private fun ColumnScope.MainPage(apps: AppsController, homeSetup: HomeSetup, onPage: (SettingsPage) -> Unit) {
+private fun ColumnScope.MainPage(
+    apps: AppsController,
+    homeSetup: HomeSetup,
+    from: SettingsPage?,
+    onPage: (SettingsPage) -> Unit,
+) {
     val settings = apps.settings
-    val first = rememberFirstFocus()
+    // Focus starts on the row of the page just closed, else on the first row.
+    val rows = remember { SettingsPage.entries.associateWith { FocusRequester() } }
+    LaunchedEffect(Unit) { (from?.let { rows[it] } ?: rows.getValue(SettingsPage.Home)).tryFocus() }
     val on = stringResource(R.string.settings_on)
     val off = stringResource(R.string.settings_off)
     fun state(value: Boolean) = if (value) on else off
@@ -127,6 +140,16 @@ private fun ColumnScope.MainPage(apps: AppsController, homeSetup: HomeSetup, onP
         7 to stringResource(R.string.size_small),
         8 to stringResource(R.string.size_extra_small),
     )
+    val scrimNames = mapOf(
+        ScrimColors.BLACK to stringResource(R.string.scrim_black),
+        ScrimColors.IMAGE to stringResource(R.string.scrim_image),
+        "blue" to stringResource(R.string.scrim_blue),
+        "purple" to stringResource(R.string.scrim_purple),
+        "green" to stringResource(R.string.scrim_green),
+        "red" to stringResource(R.string.scrim_red),
+        "teal" to stringResource(R.string.scrim_teal),
+        "brown" to stringResource(R.string.scrim_brown),
+    )
 
     Title(stringResource(R.string.settings_title))
     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
@@ -136,17 +159,19 @@ private fun ColumnScope.MainPage(apps: AppsController, homeSetup: HomeSetup, onP
                 if (homeSetup.isDefaultHome || homeSetup.helperEnabled) R.string.settings_home_ready else R.string.settings_home_hint,
             ),
             onClick = { onPage(SettingsPage.Home) },
-            modifier = Modifier.focusRequester(first),
+            modifier = Modifier.focusRequester(rows.getValue(SettingsPage.Home)),
         )
         MenuRow(
             text = stringResource(R.string.settings_language),
             trailing = languageName(settings.language),
             onClick = { onPage(SettingsPage.Language) },
+            modifier = Modifier.focusRequester(rows.getValue(SettingsPage.Language)),
         )
         MenuRow(
             text = stringResource(R.string.settings_glass),
             secondary = stringResource(R.string.settings_glass_hint),
             onClick = { onPage(SettingsPage.Glass) },
+            modifier = Modifier.focusRequester(rows.getValue(SettingsPage.Glass)),
         )
         ChoiceRow(
             text = stringResource(R.string.settings_app_size),
@@ -172,6 +197,14 @@ private fun ColumnScope.MainPage(apps: AppsController, homeSetup: HomeSetup, onP
             label = { "$it%" },
             onSelect = { settings.textPercent = it },
         )
+        ChoiceRow(
+            text = stringResource(R.string.settings_scrim),
+            secondary = stringResource(R.string.settings_scrim_hint),
+            options = ScrimColors.KEYS,
+            selected = settings.scrimColor,
+            label = { scrimNames[it] ?: it },
+            onSelect = { settings.scrimColor = it },
+        )
         MenuRow(
             text = stringResource(R.string.settings_phone_apps),
             secondary = stringResource(R.string.settings_phone_apps_hint),
@@ -195,11 +228,13 @@ private fun ColumnScope.MainPage(apps: AppsController, homeSetup: HomeSetup, onP
             trailing = apps.layout.hidden.count { it in apps.apps }.toString(),
             icon = R.drawable.ic_hide,
             onClick = { onPage(SettingsPage.Hidden) },
+            modifier = Modifier.focusRequester(rows.getValue(SettingsPage.Hidden)),
         )
         MenuRow(
             text = stringResource(R.string.settings_about),
             icon = R.drawable.ic_info,
             onClick = { onPage(SettingsPage.About) },
+            modifier = Modifier.focusRequester(rows.getValue(SettingsPage.About)),
         )
     }
 }

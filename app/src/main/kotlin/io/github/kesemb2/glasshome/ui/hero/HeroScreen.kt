@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.animateDpAsState
@@ -38,6 +39,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,7 +52,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -86,6 +88,7 @@ import io.github.kesemb2.glasshome.data.hero.HeroItem
 import io.github.kesemb2.glasshome.data.tmdb.MediaHint
 import io.github.kesemb2.glasshome.image.HeroImages
 import io.github.kesemb2.glasshome.image.ImageState
+import io.github.kesemb2.glasshome.image.ScrimTone
 import io.github.kesemb2.glasshome.image.bitmapFor
 import io.github.kesemb2.glasshome.image.rememberImage
 import io.github.kesemb2.glasshome.image.rememberLoadedImage
@@ -102,9 +105,11 @@ import io.github.kesemb2.glasshome.ui.theme.LocalGlassType
 import io.github.kesemb2.glasshome.ui.theme.Shapes
 import io.github.kesemb2.glasshome.ui.theme.Spacing
 import io.github.kesemb2.glasshome.ui.theme.Springs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -141,6 +146,7 @@ const val GRID_DIM = 0.4f
  * backdrop cross-fades to a heavily blurred, darker version for the app grid, which [gridGlass] also gets for the
  * glass there. The whole backdrop is recorded into [backdropLayer], which live glass draws again behind itself.
  * The text ends [contentBottom] above the screen's bottom edge (above the favorites shelf).
+ * [scrimColor] (Settings › Gradient colour, one of [ScrimColors.KEYS]) is what the scrims and that darkening fade to.
  * [focusModifier] goes on Play (or Allow), before its focus target.
  */
 @Composable
@@ -153,6 +159,7 @@ fun HeroScreen(
     contentBottom: Dp,
     logoScale: Float,
     textScale: Float,
+    scrimColor: String,
     gridGlass: GlassBackdrop,
     backdropLayer: GraphicsLayer,
     focusModifier: Modifier,
@@ -234,14 +241,28 @@ fun HeroScreen(
         step(+1)
     }
 
+    // The scrims' colour: a fixed one, or a near-black tinted by this item's image (kept from the previous item
+    // until this one's image is in). It changes with the backdrop's cross-fade.
+    val tone by produceState(Color.Black, scrimColor, dim) {
+        value = ScrimColors.fixed(scrimColor) ?: when (val b = dim) {
+            is ImageState.Ready -> withContext(Dispatchers.Default) { Color(ScrimTone.of(b.bitmap.pixels())) }
+            ImageState.Failed -> Color.Black
+            ImageState.Loading -> return@produceState
+        }
+    }
+    val scrimState = animateColorAsState(tone, Springs.content(), label = "scrim")
+    val scrim = remember(scrimState) { { scrimState.value } }
+
     // Glass surfaces get the same scrims and the same overscan zoom as the backdrop behind them.
     val overscanPx = with(LocalDensity.current) { PARALLAX.toPx() }
-    DisposableEffect(glass, rtl, overscanPx) {
-        glass?.shade = { root -> HeroScrim.shade(root.width, root.height, rtl) }
+    DisposableEffect(glass, gridGlass, rtl, overscanPx) {
+        glass?.shade = { root -> HeroScrim.shade(root.width, root.height, rtl, scrim()) }
         glass?.zoom = 1f + 2f * overscanPx / metrics.widthPixels
+        gridGlass.shade = { GlassShade(0f, 1f, 0f, 0f, 1f, 0f, uniform = GRID_DIM, color = scrim()) }
         onDispose {
             glass?.shade = null
             glass?.zoom = 1f
+            gridGlass.shade = null
         }
     }
 
@@ -260,8 +281,8 @@ fun HeroScreen(
         HeroBackdrop(item?.key, sharp.bitmapFor(backdropUrl), soft.bitmapFor(backdropUrl), forward, rtl, overscanPx) {
             grid() >= 1f
         }
-        Scrims(rtl) { 1f - grid() }
-        GridBackdrop(dim.bitmapFor(backdropUrl), grid)
+        Scrims(rtl, scrim) { 1f - grid() }
+        GridBackdrop(dim.bitmapFor(backdropUrl), scrim, grid)
     }
 
     // The text scrolls away with the camera and fades out over the grid.
@@ -401,10 +422,11 @@ private fun DrawScope.drawCover(image: ImageBitmap, alpha: Float, offsetX: Float
 /**
  * Start-side and bottom scrims keep the text legible over any backdrop; they fade out over the grid. Both are
  * baked into one small bitmap drawn stretched (smooth ramps survive the scaling), so they cost one pass instead
- * of two full-screen gradients: the TV's memory bandwidth, not its GPU, is the limit at 1080p.
+ * of two full-screen gradients: the TV's memory bandwidth, not its GPU, is the limit at 1080p. The bitmap is
+ * black; another [color] tints it as it is drawn.
  */
 @Composable
-private fun Scrims(rtl: Boolean, alpha: () -> Float) {
+private fun Scrims(rtl: Boolean, color: () -> Color, alpha: () -> Float) {
     Spacer(
         Modifier
             .fillMaxSize()
@@ -413,25 +435,33 @@ private fun Scrims(rtl: Boolean, alpha: () -> Float) {
                 val dst = IntSize(size.width.roundToInt(), size.height.roundToInt())
                 onDrawBehind {
                     val a = alpha().coerceIn(0f, 1f)
-                    if (a > 0f) drawImage(scrim, dstSize = dst, alpha = a, filterQuality = FilterQuality.Low)
+                    if (a <= 0f) return@onDrawBehind
+                    val c = color()
+                    val tint = if (c == Color.Black) null else ColorFilter.tint(c, BlendMode.SrcIn)
+                    drawImage(scrim, dstSize = dst, alpha = a, colorFilter = tint, filterQuality = FilterQuality.Low)
                 }
             },
     )
 }
 
-/** Behind the app grid: the backdrop heavily blurred and darkened (one pass), faded in by [amount]. */
+/**
+ * Behind the app grid: the backdrop heavily blurred and darkened towards [color] (one pass), faded in by [amount].
+ */
 @Composable
-private fun GridBackdrop(image: ImageBitmap?, amount: () -> Float) {
-    val darken = remember {
-        ColorFilter.lighting(multiply = Color(1f - GRID_DIM, 1f - GRID_DIM, 1f - GRID_DIM), add = Color.Black)
-    }
+private fun GridBackdrop(image: ImageBitmap?, color: () -> Color, amount: () -> Float) {
     Spacer(
         Modifier
             .fillMaxSize()
             .drawBehind {
                 val a = amount().coerceIn(0f, 1f)
                 if (a <= 0f) return@drawBehind
+                val c = color()
                 if (image != null) {
+                    // image * (1 - dim) + colour * dim
+                    val darken = ColorFilter.lighting(
+                        multiply = Color(1f - GRID_DIM, 1f - GRID_DIM, 1f - GRID_DIM),
+                        add = Color(c.red * GRID_DIM, c.green * GRID_DIM, c.blue * GRID_DIM),
+                    )
                     drawImage(
                         image = image,
                         dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
@@ -440,23 +470,24 @@ private fun GridBackdrop(image: ImageBitmap?, amount: () -> Float) {
                         filterQuality = FilterQuality.Low,
                     )
                 } else {
-                    drawRect(Color.Black, alpha = GRID_DIM * a)
+                    drawRect(c, alpha = GRID_DIM * a)
                 }
             },
     )
 }
 
-/** Start-side (85% black over 60% of the width) and bottom (90% black over 55% of the height) scrims. */
+/** Start-side (85% over 60% of the width) and bottom (90% over 55% of the height) scrims of [GlassShade.color]. */
 private object HeroScrim {
     private const val BITMAP_WIDTH = 192
 
-    fun shade(width: Float, height: Float, rtl: Boolean) = GlassShade(
+    fun shade(width: Float, height: Float, rtl: Boolean, color: Color = Color.Black) = GlassShade(
         fromX = if (rtl) width else 0f,
         toX = if (rtl) width * 0.4f else width * 0.6f,
         alphaX = 0.85f,
         fromY = height * 0.45f,
         toY = height,
         alphaY = 0.9f,
+        color = color,
     )
 
     /** Both ramps of [shade] as one black bitmap with the combined alpha, at a small size with [size]'s shape. */
@@ -478,6 +509,8 @@ private object HeroScrim {
         return android.graphics.Bitmap.createBitmap(pixels, w, h, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
     }
 }
+
+private fun ImageBitmap.pixels(): IntArray = IntArray(width * height).also { readPixels(it) }
 
 @Composable
 private fun rememberStagger(order: Int): Animatable<Float, AnimationVector1D> {

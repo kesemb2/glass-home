@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import io.github.kesemb2.glasshome.system.HomeSystem
 import io.github.kesemb2.glasshome.ui.apps.CardSize
 import io.github.kesemb2.glasshome.ui.glass.GlassStyle
+import io.github.kesemb2.glasshome.ui.hero.ScrimColors
 
 /** The launcher's settings, observable by Compose and saved as soon as they change. */
 @Stable
@@ -32,6 +33,16 @@ class AppSettings(context: Context) {
             }
     }
 
+    private inner class Text(private val key: String, default: String) {
+        val state = mutableStateOf(prefs.getString(key, null) ?: default)
+        var value: String
+            get() = state.value
+            set(v) {
+                state.value = v
+                prefs.edit().putString(key, v).apply()
+            }
+    }
+
     private val phoneApps = Flag("show_phone_apps", false)
     private val columns = Choice("app_columns", CardSize.DEFAULT_COLUMNS, CardSize.MIN_COLUMNS..CardSize.MAX_COLUMNS)
     private val logo = Choice("logo_percent", DEFAULT_LOGO_PERCENT, LOGO_PERCENTS.first()..LOGO_PERCENTS.last())
@@ -46,6 +57,7 @@ class AppSettings(context: Context) {
     private val glassBrightness = Choice("glass_brightness_pct", DEFAULT_BRIGHTNESS, BRIGHTNESSES.first()..BRIGHTNESSES.last())
     private val glassTransparency =
         Choice("glass_transparency_pct", DEFAULT_TRANSPARENCY, TRANSPARENCIES.first()..TRANSPARENCIES.last())
+    private val scrim = Text("scrim_color", ScrimColors.BLACK)
 
     /** Also show apps that only have a phone/tablet launcher activity. */
     var showPhoneApps: Boolean
@@ -135,7 +147,14 @@ class AppSettings(context: Context) {
             text.value = v
         }
 
-    /** The app's language: [AppLanguage.SYSTEM], [AppLanguage.HEBREW] or [AppLanguage.ENGLISH]. */
+    /** The hero's gradient colour, one of [ScrimColors.KEYS]. */
+    var scrimColor: String
+        get() = scrim.value
+        set(v) {
+            scrim.value = v
+        }
+
+    /** The app's language:[AppLanguage.SYSTEM], [AppLanguage.HEBREW] or [AppLanguage.ENGLISH]. */
     val language: String get() = AppLanguage.stored(prefs)
 
     /** With the Home helper on: the Home button opens Glass Home. */

@@ -26,8 +26,9 @@ settings from stage 2 (`ui/home`, `ui/apps`, `ui/overlay`, `ui/settings`). Value
 | `textTertiary` | `#EBEBF5` @ 30% | Disabled, hints |
 | `focusFill` | `#FFFFFF` | Focused buttons fill white, content turns `onFocus` |
 | `onFocus` | `#0A0A0F` | Text/icons on a focused white fill |
-| `scrimStart` | black 85% → 0% over 60% of the width | Hero legibility (start side) |
-| `scrimBottom` | black 90% → 0% over 55% of the height | Hero legibility (bottom) |
+| `scrimStart` | scrim colour 85% → 0% over 60% of the width | Hero legibility (start side) |
+| `scrimBottom` | scrim colour 90% → 0% over 55% of the height | Hero legibility (bottom) |
+| scrim colour | Settings › Gradient color: black (default), from the image, or a dark blue `#0B1630`, purple `#24112E`, green `#0C2117`, red `#2A0C14`, teal `#08242A` or brown `#22160C` | Scrims and the grid's darkening |
 | `progressTrack` / `progressFill` | white 25% / white 90% | Hero progress bar |
 
 ## Type
@@ -54,6 +55,12 @@ content titles) renders in it while digits and Latin stay in Inter.
 - Spacing scale: 4, 8, 12, 16, 20, 24, 32, 40, 48 dp.
 - **Sizes are settings** (Settings): app size 5–8 cards per row (default 6), logo 50–100% (default 70%), details
   text 80–130% (default 100%). Card, shelf and hero geometry below are for the chosen size.
+- **Gradient color "from the image"**: the hue carrying the most colour in the hero image (pixels vote with their
+  chroma, 24 hue bins, so blacks, whites and greys do not vote) at HSV value 0.07–0.17 and saturation up to 0.75,
+  both scaled by how colourful the whole image is: a colourful image gives a dark tint of its colour, a grey one
+  stays almost black. Computed once per image from the grid's 192 × 108 copy, off the main thread; it springs to
+  the new tone with the backdrop's cross-fade. Cached glass mixes the same colour in where it applies the scrims;
+  live glass already sees them.
 - Corner radii: app card **16 dp**; glass pill **fully rounded**; favorites shelf **28 dp**; menus and folders
   **24 dp**. Corners are continuous (`ContinuousRoundedShape`): each corner starts 1.5 × radius from the vertex
   and eases in with one cubic, so curvature ramps up from zero instead of jumping like a circular arc.
@@ -192,7 +199,11 @@ Springs everywhere; never linear tweens.
 - **Folders**: open full screen over the blurred home screen (scale 0.94 → 1 and fade).
 - **Home**: from anywhere (the system's home intent or the Home helper) closes every overlay and returns to Play
   with the camera at the top. Back at the top does nothing: this is the home screen.
-- **Settings**: a glass panel slides in from the end edge.
+- **Settings**: a glass panel slides in from the end edge. Back on a sub-page returns to the main page with focus
+  on that page's row; Back on the main page closes the panel. (Back is routed straight to the home screen's
+  handler, before Compose's focus system, which would otherwise spend it moving focus out of the scrolling list.)
+- **Focus shine**: the tilt and the light sweep run to the end on the element that started them, even after focus
+  has moved on.
 - **Move mode**: the card wiggles slightly (±1.6°, eased, 140 ms per swing) while the D-pad moves it and its
   neighbours slide aside (`focus` spring). This is the only repeating animation and runs only while moving.
 - **Idle**: when nothing is focused-changing or playing, no frame is drawn.
