@@ -85,7 +85,7 @@ signing.storeFile=/path/to/glass-home-release.p12
 signing.storePassword=...
 ```
 
-Then `./gradlew testReleaseUnitTest assembleRelease`. Without signing values the release APK is unsigned.
+Then `./gradlew test assembleRelease`. Without signing values the release APK is unsigned.
 
 ## Stack
 
