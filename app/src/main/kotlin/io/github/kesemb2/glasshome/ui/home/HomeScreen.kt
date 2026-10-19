@@ -26,7 +26,7 @@ fun HomeScreen(
     controller: HomeController,
     visible: Boolean,
     resumed: Boolean,
-    lastKeyAt: Long,
+    lastKeyAt: () -> Long,
     onPlay: (HeroItem) -> Unit,
     onRequestAccess: () -> Unit,
 ) {

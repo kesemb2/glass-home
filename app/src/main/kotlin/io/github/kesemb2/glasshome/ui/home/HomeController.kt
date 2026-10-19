@@ -19,6 +19,7 @@ import io.github.kesemb2.glasshome.data.watchnext.PermissionStatus
 import io.github.kesemb2.glasshome.data.watchnext.WatchNextAccess
 import io.github.kesemb2.glasshome.data.watchnext.WatchNextRepository
 import io.github.kesemb2.glasshome.data.watchnext.WatchNextRules
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -85,7 +86,15 @@ class HomeController(private val app: GlassHomeApp, private val scope: Coroutine
             val entries = result.getOrDefault(emptyList())
             val selected = WatchNextRules.select(entries, app.packageName, repository.dismissedKeys())
             val items = withContext(Dispatchers.IO) {
-                selected.map { enriched[it.dismissKey] ?: resolver.base(it) }
+                selected.mapNotNull { entry ->
+                    enriched[entry.dismissKey] ?: try {
+                        resolver.base(entry)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null // One malformed row must not take the hero down.
+                    }
+                }
             }
             hero = HeroUiState(
                 loaded = true,
@@ -97,7 +106,13 @@ class HomeController(private val app: GlassHomeApp, private val scope: Coroutine
             )
             for (item in items) {
                 if (item.enriched) continue
-                val full = resolver.enrich(item)
+                val full = try {
+                    resolver.enrich(item)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    item.copy(enriched = true)
+                }
                 enriched[item.entry.dismissKey] = full
                 hero = hero.copy(items = hero.items.map { if (it.key == full.key) full else it })
             }

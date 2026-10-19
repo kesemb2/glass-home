@@ -24,14 +24,27 @@ https://github.com/kesemb2/glass-home/releases/latest/download/glass-home.apk
 
 | Stage | Scope | State |
 |---|---|---|
-| 0 | Repo, CI, signing, release publishing, diagnostics screen | **in progress** |
-| 1 | Design system + Continue Watching hero | planned |
+| 0 | Repo, CI, signing, release publishing, diagnostics screen | done |
+| 1 | Design system + Continue Watching hero | **in progress** |
 | 2 | Favorites, app grid, folders, menus, settings | planned |
 | 3 | Home button, start on boot, Hebrew/RTL pass | planned |
 | 4 | Performance and polish against the budgets | planned |
 
-Stage 0 shows a diagnostics screen (UI surface size, display mode, density, memory, build) used to size
-everything that follows.
+Stage 0 measured the box: UI surface 1920 × 1080 px (960 × 540 dp at density 2), video mode 3840 × 2160 @ 59.94 Hz,
+33 MB PSS for the minimal screen.
+
+## Continue Watching
+
+The hero reads the system **Watch Next** list (`TvContract.WatchNextPrograms`), the same list Android TV's own home
+screen uses. Apps decide what they publish there.
+
+- **Permission:** on first start the app asks to read TV listings (`READ_TV_LISTINGS`, a runtime permission on
+  current Android TV builds). Older builds use `READ_EPG_DATA` instead; the app declares both and requests whichever
+  this TV treats as a runtime permission. If access is missing, the hero shows what is granted and why.
+- **Artwork and text:** the entry's own logo, poster and descriptions first; Nuvio's intent extras; then TMDB
+  (lookup by IMDb id or by title, in the TV's language with English fallback). TMDB answers are cached on disk
+  for two weeks.
+- **Remove from row:** hold OK on Play. Hidden locally only; it comes back if you watch that title again.
 
 ## Budgets
 
@@ -89,14 +102,17 @@ Then `./gradlew test assembleRelease`. Without signing values the release APK is
 
 ## Stack
 
-Kotlin, Jetpack Compose (foundation/ui only), with Coil, OkHttp and org.json arriving in stage 1. No DI
-framework, database, Retrofit, Firebase, analytics or ads. minSdk 28, compile/target SDK 37, AGP 9.4,
+Kotlin, Jetpack Compose (foundation/ui only), Coil 3 (core + OkHttp fetcher), OkHttp, kotlinx-coroutines and the
+platform's org.json. No DI framework, database, Retrofit, Firebase, analytics or ads. minSdk 28, compile/target SDK 37, AGP 9.4,
 Gradle 9.8, Kotlin 2.4.
 
 Design tokens and motion rules: see [DESIGN.md](DESIGN.md).
 
 ## Credits
 
-- Fonts (from stage 1): [Inter](https://rsms.me/inter/) and [Heebo](https://fonts.google.com/specimen/Heebo),
-  both under the SIL Open Font License 1.1.
+- Fonts: [Inter](https://rsms.me/inter/) and [Heebo](https://fonts.google.com/specimen/Heebo), both under the SIL
+  Open Font License 1.1 (bundled as subsets).
+- Icons: [Material Symbols](https://fonts.google.com/icons), Apache License 2.0.
+- Metadata and artwork: this product uses the TMDB API but is not endorsed or certified by
+  [TMDB](https://www.themoviedb.org/). The attribution notice and TMDB logo appear in Settings › About (stage 2).
 - Not affiliated with Apple. No Apple fonts, symbols, logos or names are used.

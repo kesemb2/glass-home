@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -95,6 +96,7 @@ private val PARALLAX = 24.dp
 private val CONTENT_BOTTOM = 64.dp
 private val LOGO_MAX_WIDTH = 380.dp
 private val LOGO_MAX_HEIGHT = 120.dp
+private val LOGO_PLACEHOLDER = 72.dp
 private val SYNOPSIS_WIDTH = 520.dp
 
 /**
@@ -106,7 +108,7 @@ private val SYNOPSIS_WIDTH = 520.dp
 fun HeroScreen(
     state: HeroUiState,
     autoAdvance: Boolean,
-    lastKeyAt: Long,
+    lastKeyAt: () -> Long,
     onPlay: (HeroItem) -> Unit,
     onDismiss: (HeroItem) -> Unit,
     onRequestAccess: () -> Unit,
@@ -157,12 +159,23 @@ fun HeroScreen(
         }
     }
 
-    // Auto-advance while visible and focused; any key press (lastKeyAt) restarts the wait.
-    LaunchedEffect(autoAdvance, heroFocused, menuOpen, lastKeyAt, index, items.size) {
+    // Auto-advance while visible and focused: 8 s after the item appeared and 20 s after the last key press.
+    LaunchedEffect(autoAdvance, heroFocused, menuOpen, index, items.size) {
         if (!autoAdvance || !heroFocused || menuOpen || items.size < 2) return@LaunchedEffect
-        val wait = max(AUTO_ADVANCE_MS, lastKeyAt + PAUSE_AFTER_KEY_MS - SystemClock.uptimeMillis())
-        delay(wait)
+        val shownAt = SystemClock.uptimeMillis()
+        while (true) {
+            val due = max(shownAt + AUTO_ADVANCE_MS, lastKeyAt() + PAUSE_AFTER_KEY_MS)
+            val now = SystemClock.uptimeMillis()
+            if (now >= due) break
+            delay(due - now)
+        }
         step(+1)
+    }
+
+    // Glass surfaces get the same scrims as the screen behind them.
+    DisposableEffect(glass, rtl) {
+        glass?.shade = { root, origin -> HeroScrim.brushes(root.width, root.height, rtl, origin.x, origin.y) }
+        onDispose { glass?.shade = null }
     }
 
     LaunchedEffect(menuOpen, item != null) {
@@ -297,23 +310,28 @@ private fun Scrims(rtl: Boolean) {
         Modifier
             .fillMaxSize()
             .drawWithCache {
-                val start = Brush.horizontalGradient(
-                    0f to Color.Black.copy(alpha = 0.85f),
-                    0.6f to Color.Transparent,
-                    startX = if (rtl) size.width else 0f,
-                    endX = if (rtl) 0f else size.width,
-                )
-                val bottom = Brush.verticalGradient(
-                    0.45f to Color.Transparent,
-                    1f to Color.Black.copy(alpha = 0.9f),
-                    startY = 0f,
-                    endY = size.height,
-                )
-                onDrawBehind {
-                    drawRect(start)
-                    drawRect(bottom)
-                }
+                val brushes = HeroScrim.brushes(size.width, size.height, rtl)
+                onDrawBehind { brushes.forEach { drawRect(it) } }
             },
+    )
+}
+
+/** Start-side (85% black over 60% of the width) and bottom (90% black over 55% of the height) scrims. */
+private object HeroScrim {
+    /** Brushes in the coordinates of a surface whose origin is at ([dx], [dy]) on a [width] x [height] screen. */
+    fun brushes(width: Float, height: Float, rtl: Boolean, dx: Float = 0f, dy: Float = 0f): List<Brush> = listOf(
+        Brush.horizontalGradient(
+            0f to Color.Black.copy(alpha = 0.85f),
+            0.6f to Color.Transparent,
+            startX = (if (rtl) width else 0f) - dx,
+            endX = (if (rtl) 0f else width) - dx,
+        ),
+        Brush.verticalGradient(
+            0.45f to Color.Transparent,
+            1f to Color.Black.copy(alpha = 0.9f),
+            startY = -dy,
+            endY = height - dy,
+        ),
     )
 }
 
@@ -448,8 +466,9 @@ private fun HeroLogo(item: HeroItem, modifier: Modifier) {
     val logo by rememberImage(item.logoUrl) { ctx, url -> HeroImages.logo(ctx, url) }
     when (val state = logo) {
         is ImageState.Ready -> LogoImage(state.bitmap, modifier)
-        ImageState.Loading -> Spacer(modifier.height(72.dp))
-        ImageState.Failed -> BasicText(
+        ImageState.Loading -> Spacer(modifier.height(LOGO_PLACEHOLDER))
+        // Until TMDB has answered, keep the logo's space instead of flashing the title.
+        ImageState.Failed -> if (!item.enriched) Spacer(modifier.height(LOGO_PLACEHOLDER)) else BasicText(
             text = item.title,
             modifier = modifier.widthIn(max = SYNOPSIS_WIDTH),
             style = type.display.copy(color = GlassColors.TextPrimary),

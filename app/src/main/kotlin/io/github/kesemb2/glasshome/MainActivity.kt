@@ -47,7 +47,7 @@ class MainActivity : ComponentActivity() {
                     controller = controller,
                     visible = visible.value,
                     resumed = resumed.value,
-                    lastKeyAt = lastKeyAt.longValue,
+                    lastKeyAt = { lastKeyAt.longValue },
                     onPlay = { controller.play(this, it) },
                     onRequestAccess = { requestWatchNextAccess(fromButton = true) },
                 )

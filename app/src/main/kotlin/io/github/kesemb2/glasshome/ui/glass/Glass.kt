@@ -13,6 +13,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -48,6 +49,12 @@ class GlassBackdrop {
     var previous by mutableStateOf<ImageBitmap?>(null)
         private set
     internal val fade = Animatable(1f)
+
+    /**
+     * Screen-space layers drawn over the sample (for example the hero's scrims), so a glass surface carries the
+     * same darkening as the screen behind it. Arguments: root size and the surface's origin in the root.
+     */
+    var shade: ((root: Size, origin: Offset) -> List<Brush>)? = null
 
     /** Cross-fades glass surfaces to [bitmap] (null shows tint only). */
     suspend fun show(bitmap: ImageBitmap?) {
@@ -133,6 +140,7 @@ private class BackdropSampler {
         val fade = backdrop.fade.value
         if (previous != null && fade < 1f) sample(scope, path, previous, origin, rootWidth, rootHeight, 1f)
         if (current != null) sample(scope, path, current, origin, rootWidth, rootHeight, if (previous != null) fade else 1f)
+        backdrop.shade?.invoke(Size(rootWidth, rootHeight), origin)?.forEach { scope.drawPath(path, it) }
     }
 
     private fun sample(
