@@ -87,4 +87,24 @@
     <string name="glass_transparency">Transparency</string>
     <string name="glass_transparency_hint">100% is clear glass, lower is more frosted</string>
     <string name="glass_reset">Reset glass</string>
+
+    <!-- Home and startup -->
+    <string name="settings_home">Home and startup</string>
+    <string name="settings_home_hint">Make the Home button open Glass Home</string>
+    <string name="settings_home_ready">Glass Home opens with the Home button</string>
+    <string name="home_default">Default home app</string>
+    <string name="home_default_yes">Glass Home is the TV\'s home app</string>
+    <string name="home_default_no">Ask the TV to make Glass Home its home app (not every TV allows it)</string>
+    <string name="home_helper">Home helper</string>
+    <string name="home_helper_hint">For TVs that do not allow a different home app. Opens the accessibility settings.</string>
+    <string name="home_button">Home button opens Glass Home</string>
+    <string name="home_button_hint">With the Home helper on</string>
+    <string name="home_replace">Replace the TV\'s home screen</string>
+    <string name="home_replace_hint">With the Home helper on: also when the TV starts, and when leaving an app</string>
+    <string name="home_open_tv_home">Open the TV\'s home screen</string>
+    <string name="home_open_tv_home_hint">Not replaced for 10 minutes, or until Home is pressed</string>
+    <string name="home_tv_settings">TV settings</string>
+    <string name="home_helper_steps">To turn on the Home helper: Home helper › Glass Home › On › Allow. If the TV says the setting is restricted: Settings › Apps › Glass Home › Allow restricted settings, then try again.</string>
+    <string name="helper_label">Glass Home: Home button</string>
+    <string name="helper_description">Opens Glass Home when the Home button is pressed or the TV\'s own home screen appears, including when the TV starts. It sees only the Home button and which app comes to the front; it does not read anything on the screen.</string>
 </resources>

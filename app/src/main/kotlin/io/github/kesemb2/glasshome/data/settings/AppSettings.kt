@@ -3,6 +3,7 @@ package io.github.kesemb2.glasshome.data.settings
 import android.content.Context
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
+import io.github.kesemb2.glasshome.system.HomeSystem
 import io.github.kesemb2.glasshome.ui.apps.CardSize
 import io.github.kesemb2.glasshome.ui.glass.GlassStyle
 
@@ -37,6 +38,8 @@ class AppSettings(context: Context) {
     private val text = Choice("text_percent", DEFAULT_TEXT_PERCENT, TEXT_PERCENTS.first()..TEXT_PERCENTS.last())
     private val autoAdvance = Flag("hero_auto_advance", true)
     private val perf = Flag("perf_overlay", false)
+    private val homeButtonFlag = Flag(HomeSystem.KEY_HOME_BUTTON, true)
+    private val replaceHomeFlag = Flag(HomeSystem.KEY_REPLACE_HOME, true)
     private val glassLive = Flag("glass_live", true)
     private val glassBlur = Choice("glass_blur_dp", DEFAULT_BLUR, BLURS.first()..BLURS.last())
     private val glassRefraction = Choice("glass_refraction_pct", DEFAULT_REFRACTION, REFRACTIONS.first()..REFRACTIONS.last())
@@ -134,6 +137,20 @@ class AppSettings(context: Context) {
 
     /** The app's language: [AppLanguage.SYSTEM], [AppLanguage.HEBREW] or [AppLanguage.ENGLISH]. */
     val language: String get() = AppLanguage.stored(prefs)
+
+    /** With the Home helper on: the Home button opens Glass Home. */
+    var homeButton: Boolean
+        get() = homeButtonFlag.value
+        set(v) {
+            homeButtonFlag.value = v
+        }
+
+    /** With the Home helper on: when the TV's own home screen opens (also at startup), Glass Home replaces it. */
+    var replaceHome: Boolean
+        get() = replaceHomeFlag.value
+        set(v) {
+            replaceHomeFlag.value = v
+        }
 
     /** Frame rate and memory in a corner of the screen. */
     var perfOverlay: Boolean

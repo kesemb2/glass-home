@@ -13,13 +13,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import io.github.kesemb2.glasshome.data.settings.AppLanguage
 import io.github.kesemb2.glasshome.data.settings.AppSettings
 import io.github.kesemb2.glasshome.data.watchnext.WatchNextAccess
+import io.github.kesemb2.glasshome.system.HomeSystem
 import io.github.kesemb2.glasshome.ui.home.AppsController
+import io.github.kesemb2.glasshome.ui.home.Area
+import io.github.kesemb2.glasshome.ui.home.HomeSetup
 import io.github.kesemb2.glasshome.ui.home.HomeController
 import io.github.kesemb2.glasshome.ui.home.HomeNav
 import io.github.kesemb2.glasshome.ui.home.HomeScreen
@@ -38,11 +42,22 @@ class MainActivity : ComponentActivity() {
 
     private val visible = mutableStateOf(false)
     private val resumed = mutableStateOf(false)
+    private val homeSignal = mutableIntStateOf(0)
     private val lastKeyAt = mutableLongStateOf(0L)
     private var askedThisSession = false
 
     private val permissionRequest =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { controller.refresh() }
+
+    private val homeRoleRequest =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { refreshHomeSetup() }
+
+    private val homeSetup = HomeSetup(
+        requestDefaultHome = { requestDefaultHome() },
+        openHelperSettings = { HomeSystem.openAccessibilitySettings(this) },
+        openTvHome = { HomeSystem.openTvHome(this) },
+        openTvSettings = { HomeSystem.openTvSettings(this) },
+    )
 
     /** The app's own language (Settings › Language) applies to everything this activity shows. */
     override fun attachBaseContext(newBase: Context) {
@@ -52,6 +67,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as GlassHomeApp
+        if (intent.isHomeIntent()) goHome()
         controller = HomeController(app, scope)
         apps = AppsController(app, scope, AppSettings(app))
         setContent {
@@ -61,6 +77,8 @@ class MainActivity : ComponentActivity() {
                     controller = controller,
                     apps = apps,
                     nav = nav,
+                    homeSetup = homeSetup,
+                    homeSignal = homeSignal.intValue,
                     visible = visible.value,
                     resumed = resumed.value,
                     lastKeyAt = { lastKeyAt.longValue },
@@ -87,6 +105,42 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         resumed.value = true
         controller.refresh()
+        refreshHomeSetup()
+    }
+
+    /** Home pressed (the system's home intent, or the Home helper): back to the top of the home screen. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.isHomeIntent()) goHome()
+    }
+
+    private fun goHome() {
+        nav.closeAll()
+        nav.area = Area.Hero
+        nav.focusKey = HomeNav.HERO
+        nav.contentKey = HomeNav.HERO
+        homeSignal.intValue++
+    }
+
+    private fun Intent.isHomeIntent(): Boolean =
+        hasCategory(Intent.CATEGORY_HOME) || getBooleanExtra(EXTRA_HOME, false)
+
+    private fun refreshHomeSetup() {
+        homeSetup.isDefaultHome = HomeSystem.isDefaultHome(this)
+        homeSetup.helperEnabled = HomeSystem.helperEnabled(this)
+    }
+
+    private fun requestDefaultHome() {
+        val request = if (HomeSystem.canRequestHomeRole(this)) HomeSystem.homeRoleRequest(this) else null
+        if (request != null) {
+            try {
+                homeRoleRequest.launch(request)
+                return
+            } catch (_: ActivityNotFoundException) {
+                // Fall through to the settings page.
+            }
+        }
+        HomeSystem.openHomeSettings(this)
     }
 
     override fun onPause() {
@@ -149,7 +203,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private companion object {
-        const val KEY_ASKED = "asked_tv_listings"
+    companion object {
+        /** Set by the Home helper and the boot receiver: open at the top, like the system's Home. */
+        const val EXTRA_HOME = "io.github.kesemb2.glasshome.HOME"
+        private const val KEY_ASKED = "asked_tv_listings"
     }
 }

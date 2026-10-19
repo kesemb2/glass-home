@@ -28,7 +28,7 @@ sealed interface MenuTarget {
 
 enum class MenuPage { Main, Folders }
 
-enum class SettingsPage { Main, Language, Glass, Hidden, About }
+enum class SettingsPage { Main, Home, Language, Glass, Hidden, About }
 
 /** Layers above the home screen, newest last. [id] keeps a layer's state when it changes page. */
 @Immutable

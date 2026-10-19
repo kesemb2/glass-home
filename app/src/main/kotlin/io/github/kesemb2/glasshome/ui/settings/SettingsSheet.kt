@@ -41,6 +41,7 @@ import io.github.kesemb2.glasshome.ui.components.MenuRow
 import io.github.kesemb2.glasshome.ui.glass.glass
 import io.github.kesemb2.glasshome.ui.glass.glassShadow
 import io.github.kesemb2.glasshome.ui.home.AppsController
+import io.github.kesemb2.glasshome.ui.home.HomeSetup
 import io.github.kesemb2.glasshome.ui.home.SettingsPage
 import io.github.kesemb2.glasshome.ui.overlay.OverlayLayer
 import io.github.kesemb2.glasshome.ui.theme.GlassColors
@@ -56,6 +57,7 @@ fun SettingsSheet(
     apps: AppsController,
     onPage: (SettingsPage) -> Unit,
     onLanguage: (String) -> Unit,
+    homeSetup: HomeSetup,
     onCovering: (Boolean) -> Unit,
 ) {
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
@@ -74,7 +76,8 @@ fun SettingsSheet(
         ) {
             key(page) {
                 when (page) {
-                    SettingsPage.Main -> MainPage(apps, onPage)
+                    SettingsPage.Main -> MainPage(apps, homeSetup, onPage)
+                    SettingsPage.Home -> HomePage(apps.settings, homeSetup)
                     SettingsPage.Language -> LanguagePage(apps.settings.language, onLanguage)
                     SettingsPage.Glass -> GlassPage(apps.settings)
                     SettingsPage.Hidden -> HiddenPage(apps)
@@ -111,7 +114,7 @@ private fun rememberFirstFocus(key: Any = Unit): FocusRequester {
 }
 
 @Composable
-private fun ColumnScope.MainPage(apps: AppsController, onPage: (SettingsPage) -> Unit) {
+private fun ColumnScope.MainPage(apps: AppsController, homeSetup: HomeSetup, onPage: (SettingsPage) -> Unit) {
     val settings = apps.settings
     val first = rememberFirstFocus()
     val on = stringResource(R.string.settings_on)
@@ -128,10 +131,17 @@ private fun ColumnScope.MainPage(apps: AppsController, onPage: (SettingsPage) ->
     Title(stringResource(R.string.settings_title))
     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
         MenuRow(
+            text = stringResource(R.string.settings_home),
+            secondary = stringResource(
+                if (homeSetup.isDefaultHome || homeSetup.helperEnabled) R.string.settings_home_ready else R.string.settings_home_hint,
+            ),
+            onClick = { onPage(SettingsPage.Home) },
+            modifier = Modifier.focusRequester(first),
+        )
+        MenuRow(
             text = stringResource(R.string.settings_language),
             trailing = languageName(settings.language),
             onClick = { onPage(SettingsPage.Language) },
-            modifier = Modifier.focusRequester(first),
         )
         MenuRow(
             text = stringResource(R.string.settings_glass),
@@ -238,6 +248,61 @@ private fun languageName(language: String): String = when (language) {
     AppLanguage.HEBREW -> "עברית"
     AppLanguage.ENGLISH -> "English"
     else -> stringResource(R.string.settings_language_system)
+}
+
+/**
+ * Making Glass Home the TV's home screen: the default home app where the TV allows it, else the Home helper (an
+ * accessibility service), plus the ways back to the TV's own home screen and settings.
+ */
+@Composable
+private fun ColumnScope.HomePage(settings: AppSettings, setup: HomeSetup) {
+    val type = LocalGlassType.current
+    val first = rememberFirstFocus()
+    val on = stringResource(R.string.settings_on)
+    val off = stringResource(R.string.settings_off)
+    Title(stringResource(R.string.settings_home))
+    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+        MenuRow(
+            text = stringResource(R.string.home_default),
+            secondary = stringResource(if (setup.isDefaultHome) R.string.home_default_yes else R.string.home_default_no),
+            trailing = if (setup.isDefaultHome) "✓" else null,
+            onClick = setup.requestDefaultHome,
+            modifier = Modifier.focusRequester(first),
+        )
+        MenuRow(
+            text = stringResource(R.string.home_helper),
+            secondary = stringResource(R.string.home_helper_hint),
+            trailing = if (setup.helperEnabled) on else off,
+            onClick = setup.openHelperSettings,
+        )
+        MenuRow(
+            text = stringResource(R.string.home_button),
+            secondary = stringResource(R.string.home_button_hint),
+            trailing = if (settings.homeButton) on else off,
+            onClick = { settings.homeButton = !settings.homeButton },
+        )
+        MenuRow(
+            text = stringResource(R.string.home_replace),
+            secondary = stringResource(R.string.home_replace_hint),
+            trailing = if (settings.replaceHome) on else off,
+            onClick = { settings.replaceHome = !settings.replaceHome },
+        )
+        MenuRow(
+            text = stringResource(R.string.home_open_tv_home),
+            secondary = stringResource(R.string.home_open_tv_home_hint),
+            onClick = setup.openTvHome,
+        )
+        MenuRow(
+            text = stringResource(R.string.home_tv_settings),
+            onClick = setup.openTvSettings,
+        )
+        Spacer(Modifier.height(Spacing.M))
+        BasicText(
+            text = stringResource(R.string.home_helper_steps),
+            modifier = Modifier.padding(horizontal = 16.dp),
+            style = type.caption.copy(color = GlassColors.TextSecondary),
+        )
+    }
 }
 
 /**

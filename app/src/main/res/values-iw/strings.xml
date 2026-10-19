@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Hero -->
-    <string name="hero_play">נגן</string>
-    <string name="hero_resume">המשך</string>
+    <string name="hero_play">הפעלה</string>
+    <string name="hero_resume">המשך צפייה</string>
     <string name="hero_season">עונה %1$d</string>
     <string name="hero_episode">פרק %1$d</string>
     <string name="hero_left_min">נותרו %1$d דק׳</string>
@@ -15,12 +15,12 @@
 
     <!-- Hero empty states -->
     <string name="empty_access_title">״המשך צפייה״ צריך הרשאה</string>
-    <string name="empty_access_body">אפשר ל-Glass Home לקרוא את רשימות הצפייה של הטלוויזיה, כדי להציג את מה שאתה צופה בו.</string>
-    <string name="empty_allow">אפשר</string>
+    <string name="empty_access_body">צריך לאפשר ל-Glass Home לקרוא את רשימות הצפייה של הטלוויזיה, כדי שמה שבאמצע צפייה יופיע כאן.</string>
+    <string name="empty_allow">מתן הרשאה</string>
     <string name="empty_blocked_title">״המשך צפייה״ לא זמין</string>
-    <string name="empty_blocked_body">הטלוויזיה הזו לא משתפת את רשימת ״המשך צפייה״ עם משגרים אחרים.</string>
+    <string name="empty_blocked_body">הטלוויזיה הזו לא משתפת את רשימת ״המשך צפייה״ עם מסכי בית אחרים.</string>
     <string name="empty_none_title">אין עדיין מה להמשיך</string>
-    <string name="empty_none_body">התחל לצפות במשהו באפליקציה שתומכת ב״המשך צפייה״, והוא יופיע כאן.</string>
+    <string name="empty_none_body">כשמתחילים לצפות במשהו באפליקציה שתומכת ב״המשך צפייה״, הוא יופיע כאן.</string>
     <string name="diag_rows">שורות גלויות ברשימה: %1$d</string>
 
     <!-- Apps -->
@@ -83,4 +83,24 @@
     <string name="glass_transparency">שקיפות</string>
     <string name="glass_transparency_hint">100% זכוכית צלולה, פחות זה יותר חלבי</string>
     <string name="glass_reset">איפוס הזכוכית</string>
+
+    <!-- Home and startup -->
+    <string name="settings_home">מסך הבית והפעלה</string>
+    <string name="settings_home_hint">כדי שכפתור הבית יפתח את Glass Home</string>
+    <string name="settings_home_ready">כפתור הבית פותח את Glass Home</string>
+    <string name="home_default">אפליקציית הבית</string>
+    <string name="home_default_yes">Glass Home היא אפליקציית הבית של הטלוויזיה</string>
+    <string name="home_default_no">בקשה מהטלוויזיה להגדיר את Glass Home כאפליקציית הבית (לא כל טלוויזיה מאפשרת)</string>
+    <string name="home_helper">עוזר כפתור הבית</string>
+    <string name="home_helper_hint">לטלוויזיות שלא מאפשרות להחליף את אפליקציית הבית. פותח את הגדרות הנגישות.</string>
+    <string name="home_button">כפתור הבית פותח את Glass Home</string>
+    <string name="home_button_hint">כשעוזר כפתור הבית פועל</string>
+    <string name="home_replace">החלפת מסך הבית של הטלוויזיה</string>
+    <string name="home_replace_hint">כשהעוזר פועל: גם כשהטלוויזיה נדלקת וגם ביציאה מאפליקציה</string>
+    <string name="home_open_tv_home">פתיחת מסך הבית של הטלוויזיה</string>
+    <string name="home_open_tv_home_hint">לא יוחלף במשך 10 דקות, או עד לחיצה על כפתור הבית</string>
+    <string name="home_tv_settings">הגדרות הטלוויזיה</string>
+    <string name="home_helper_steps">הפעלת העוזר: עוזר כפתור הבית › Glass Home › הפעלה › אישור. אם הטלוויזיה כותבת שההגדרה מוגבלת: הגדרות › אפליקציות › Glass Home › התרת הגדרות מוגבלות, ואז לנסות שוב.</string>
+    <string name="helper_label">Glass Home: כפתור הבית</string>
+    <string name="helper_description">פותח את Glass Home כשלוחצים על כפתור הבית או כשמסך הבית של הטלוויזיה מופיע, גם כשהטלוויזיה נדלקת. העוזר רואה רק את כפתור הבית ואיזו אפליקציה עוברת לקדמת המסך, ולא קורא שום דבר מהמסך.</string>
 </resources>

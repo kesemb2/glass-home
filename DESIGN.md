@@ -12,7 +12,9 @@ settings from stage 2 (`ui/home`, `ui/apps`, `ui/overlay`, `ui/settings`). Value
   (xhdpi, density 2.0), display mode 3840 × 2160 @ 59.94 Hz (video plane), 3.4 GB RAM visible, 256 MB heap class.
   Never hardcode it: the real window size is read at runtime and images are sized to it.
 - Safe margins: **48 dp** start/end, **27 dp** top/bottom. Content width: 864 dp.
-- Layout mirrors fully in RTL (Hebrew). "Start"/"end" below follow the layout direction.
+- Layout mirrors fully in RTL (Hebrew). "Start"/"end" below follow the layout direction. Multi-line text in the
+  hero aligns to the layout's start edge even when it runs the other way (an English synopsis in Hebrew); the
+  performance overlay stays left to right.
 
 ## Colour
 
@@ -187,6 +189,8 @@ Springs everywhere; never linear tweens.
 - **Menus**: open next to their card (below it when there is room, else above), scaling in from the card's side;
   a sharp copy of the card stays lifted over the blur.
 - **Folders**: open full screen over the blurred home screen (scale 0.94 → 1 and fade).
+- **Home**: from anywhere (the system's home intent or the Home helper) closes every overlay and returns to Play
+  with the camera at the top. Back at the top does nothing: this is the home screen.
 - **Settings**: a glass panel slides in from the end edge.
 - **Move mode**: the card wiggles slightly (±1.6°, eased, 140 ms per swing) while the D-pad moves it and its
   neighbours slide aside (`focus` spring). This is the only repeating animation and runs only while moving.

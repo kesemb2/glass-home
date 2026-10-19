@@ -26,8 +26,8 @@ https://github.com/kesemb2/glass-home/releases/latest/download/glass-home.apk
 |---|---|---|
 | 0 | Repo, CI, signing, release publishing, diagnostics screen | done |
 | 1 | Design system + Continue Watching hero | done |
-| 2 | Favorites, app grid, folders, menus, settings | **in testing** |
-| 3 | Home button, start on boot, Hebrew/RTL pass | planned |
+| 2 | Favorites, app grid, folders, menus, settings, live glass | done |
+| 3 | Home button, start on boot, Hebrew/RTL pass | **in testing** |
 | 4 | Performance and polish against the budgets | planned |
 
 Stage 0 measured the box: UI surface 1920 × 1080 px (960 × 540 dp at density 2), video mode 3840 × 2160 @ 59.94 Hz,
@@ -58,6 +58,25 @@ screen uses. Apps decide what they publish there.
   and About (version, TMDB notice).
 - **Continue Watching** shows the title's logo and episode line; the synopsis and time left appear when Play is
   focused.
+
+## Making it the TV's home screen
+
+Settings (gear) › **Home and startup**:
+
+1. **Default home app**: asks the TV to make Glass Home its home app. Where the TV allows it, that is all: Home,
+   startup and leaving an app all land in Glass Home.
+2. Most Android TV builds do not allow it. Then turn on the **Home helper**: the row opens the TV's accessibility
+   settings; choose *Glass Home: Home button*, switch it on and confirm. If the TV says the setting is restricted
+   (Android 13+ for apps not installed from the Play Store): TV Settings › Apps › Glass Home › *Allow restricted
+   settings*, then try again.
+3. With the helper on, **Home button opens Glass Home** and **Replace the TV's home screen** (also right after the
+   TV starts and when leaving an app) can each be switched off.
+4. **Open the TV's home screen** leaves the helper alone for 10 minutes (or until Home is pressed); **TV settings**
+   opens the system settings.
+
+The helper is an accessibility service that sees only the Home key and which activity comes to the front; it does
+not read screen content. Pressing Home while Glass Home is open returns to Continue Watching. Back never leaves the
+home screen.
 
 ## Budgets
 

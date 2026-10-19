@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -21,7 +22,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.kesemb2.glasshome.ui.theme.LocalGlassType
 import kotlinx.coroutines.Dispatchers
@@ -73,12 +77,22 @@ fun PerfOverlay(modifier: Modifier = Modifier) {
         }
     }
 
-    Box(
-        modifier
-            .background(Color(0xCC000000), RoundedCornerShape(8.dp))
-            .padding(horizontal = 10.dp, vertical = 6.dp),
-    ) {
-        BasicText(text, style = type.caption.copy(color = Color.White, fontFeatureSettings = "tnum"))
+    // Numbers and English labels: always left to right, also in Hebrew.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Box(
+            modifier
+                .background(Color(0xCC000000), RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+        ) {
+            BasicText(
+                text,
+                style = type.caption.copy(
+                    color = Color.White,
+                    fontFeatureSettings = "tnum",
+                    textDirection = TextDirection.Ltr,
+                ),
+            )
+        }
     }
 }
 

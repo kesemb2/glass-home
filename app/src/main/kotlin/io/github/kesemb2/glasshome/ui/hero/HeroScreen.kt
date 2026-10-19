@@ -72,6 +72,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -499,15 +500,18 @@ private fun HeroText(item: HeroItem, rtl: Boolean, showDetails: Boolean, logoSca
     val type = LocalGlassType.current
     val offsetPx = with(LocalDensity.current) { 18.dp.toPx() } * (if (rtl) -1f else 1f)
     val metaStyle = type.callout.copy(color = GlassColors.TextSecondary, fontSize = META_SIZE * textScale)
+    // Aligned to the layout's start edge even when the text runs the other way (an English synopsis in Hebrew).
+    val edge = if (rtl) TextAlign.Right else TextAlign.Left
     val bodyStyle = type.body.copy(
         color = GlassColors.TextPrimary.copy(alpha = 0.8f),
         fontSize = BODY_SIZE * textScale,
         lineHeight = BODY_LINE * textScale,
+        textAlign = edge,
     )
     val captionStyle = type.caption.copy(color = GlassColors.TextSecondary, fontSize = CAPTION_SIZE * textScale)
 
     Column {
-        HeroLogo(item, logoScale, Modifier.stagger(rememberStagger(0), offsetPx))
+        HeroLogo(item, logoScale, edge, Modifier.stagger(rememberStagger(0), offsetPx))
 
         val meta = buildList {
             item.season?.let { add(stringResource(R.string.hero_season, it)) }
@@ -604,7 +608,7 @@ private fun ProgressBar(progress: Float, rtl: Boolean, width: Dp) {
 
 /** Logo fitted into 380 x 96 dp x [scale], start-aligned; the title as large text when there is no logo. */
 @Composable
-private fun HeroLogo(item: HeroItem, scale: Float, modifier: Modifier) {
+private fun HeroLogo(item: HeroItem, scale: Float, edge: TextAlign, modifier: Modifier) {
     val type = LocalGlassType.current
     val logo by rememberImage(item.logoUrl) { ctx, url -> HeroImages.logo(ctx, url) }
     when (val state = logo) {
@@ -614,7 +618,7 @@ private fun HeroLogo(item: HeroItem, scale: Float, modifier: Modifier) {
         ImageState.Failed -> if (!item.enriched) Spacer(modifier.height(LOGO_PLACEHOLDER * scale)) else BasicText(
             text = item.title,
             modifier = modifier.widthIn(max = SYNOPSIS_WIDTH),
-            style = type.display.copy(color = GlassColors.TextPrimary, fontSize = type.display.fontSize * scale),
+            style = type.display.copy(color = GlassColors.TextPrimary, fontSize = type.display.fontSize * scale, textAlign = edge),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )

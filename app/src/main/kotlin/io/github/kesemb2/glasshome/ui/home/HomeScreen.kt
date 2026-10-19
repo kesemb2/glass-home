@@ -112,6 +112,8 @@ fun HomeScreen(
     controller: HomeController,
     apps: AppsController,
     nav: HomeNav,
+    homeSetup: HomeSetup,
+    homeSignal: Int,
     visible: Boolean,
     resumed: Boolean,
     lastKeyAt: () -> Long,
@@ -128,7 +130,7 @@ fun HomeScreen(
             DisposableEffect(Unit) { onDispose { nav.closeAll() } }
             val backdrop = remember { GlassBackdrop() }
             CompositionLocalProvider(LocalGlassBackdrop provides backdrop) {
-                HomeContent(controller, apps, nav, resumed, lastKeyAt, onPlay, onRequestAccess, onLanguage)
+                HomeContent(controller, apps, nav, homeSetup, homeSignal, resumed, lastKeyAt, onPlay, onRequestAccess, onLanguage)
             }
         }
     }
@@ -139,6 +141,8 @@ private fun HomeContent(
     controller: HomeController,
     apps: AppsController,
     nav: HomeNav,
+    homeSetup: HomeSetup,
+    homeSignal: Int,
     resumed: Boolean,
     lastKeyAt: () -> Long,
     onPlay: (HeroItem) -> Unit,
@@ -162,7 +166,15 @@ private fun HomeContent(
 
     fun focusHero(): Boolean = nav.focus(HERO)
 
-    BackHandler(enabled = moving != null || overlaysOpen || nav.area != Area.Hero) {
+    // Home while already here: back to the top (the activity has reset the navigation state).
+    LaunchedEffect(homeSignal) {
+        if (homeSignal == 0) return@LaunchedEffect
+        withFrameNanos { }
+        if (!focusHero()) focusShelf()
+    }
+
+    // Always handled: this is the home screen, so Back never leaves it.
+    BackHandler {
         when {
             moving != null -> nav.moving = null
             overlaysOpen -> {
@@ -428,6 +440,7 @@ private fun HomeContent(
                         apps = apps,
                         onPage = { page -> nav.replaceTop(overlay.copy(page = page)) },
                         onLanguage = onLanguage,
+                        homeSetup = homeSetup,
                         onCovering = onCovering,
                     )
                 }
