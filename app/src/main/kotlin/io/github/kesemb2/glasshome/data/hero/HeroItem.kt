@@ -1,15 +1,7 @@
 package io.github.kesemb2.glasshome.data.hero
 
-import android.annotation.SuppressLint
-import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.Drawable
 import androidx.compose.runtime.Immutable
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import io.github.kesemb2.glasshome.data.tmdb.MediaHint
 import io.github.kesemb2.glasshome.data.tmdb.TmdbArt
 import io.github.kesemb2.glasshome.data.tmdb.TmdbClient
@@ -23,8 +15,6 @@ import java.util.Locale
 data class HeroItem(
     val key: String,
     val entry: WatchNextEntry,
-    val appLabel: String?,
-    val appIcon: ImageBitmap?,
     val title: String,
     val season: Int?,
     val episode: Int?,
@@ -75,17 +65,14 @@ data class NuvioExtras(
 }
 
 /**
- * Builds [HeroItem]s. [base] is immediate (provider data, Nuvio extras, app label and icon); [enrich] fills
+ * Builds [HeroItem]s. [base] is immediate (provider data and Nuvio extras); [enrich] fills
  * gaps from TMDB in the documented order:
  * - logo: entry logo URI, Nuvio logo, TMDB logo, else the title is drawn as text;
  * - backdrop: 16:9 poster art, Nuvio backdrop, TMDB backdrop, poster of unknown shape, thumbnail;
  * - synopsis: short description, long description, TMDB (episode overview when season/episode are known).
  */
-class HeroResolver(private val context: Context, private val tmdb: TmdbClient?) {
+class HeroResolver(private val tmdb: TmdbClient?) {
 
-    private val apps = HashMap<String, Pair<String?, ImageBitmap?>>()
-
-    /** Call off the main thread: loads the source app's label and icon. */
     fun base(entry: WatchNextEntry): HeroItem {
         val nuvio = if (NuvioExtras.isNuvio(entry.packageName)) NuvioExtras.parse(entry.intentUri) else null
         val season = entry.seasonNumber?.toIntOrNull() ?: nuvio?.season
@@ -98,15 +85,12 @@ class HeroResolver(private val context: Context, private val tmdb: TmdbClient?) 
             entry.type == WatchNextEntry.TYPE_MOVIE || contentType == "movie" -> MediaHint.MOVIE
             else -> MediaHint.UNKNOWN
         }
-        val (label, icon) = appInfo(entry.packageName)
         val duration = entry.durationMillis
         val position = entry.positionMillis.coerceAtMost(duration.takeIf { it > 0 } ?: Long.MAX_VALUE)
         val hasProgress = duration > 0 && position > 0
         return HeroItem(
             key = entry.stableKey,
             entry = entry,
-            appLabel = label,
-            appIcon = icon,
             title = entry.title,
             season = season,
             episode = episode,
@@ -155,30 +139,8 @@ class HeroResolver(private val context: Context, private val tmdb: TmdbClient?) 
         )
     }
 
-    private fun appInfo(packageName: String): Pair<String?, ImageBitmap?> = synchronized(apps) {
-        apps.getOrPut(packageName) {
-            try {
-                val pm = context.packageManager
-                val info = pm.getApplicationInfo(packageName, 0)
-                pm.getApplicationLabel(info).toString() to pm.getApplicationIcon(info).toImageBitmap(APP_ICON_PX)
-            } catch (_: PackageManager.NameNotFoundException) {
-                null to null
-            }
-        }
-    }
-
     private companion object {
-        const val APP_ICON_PX = 40
         val TV_TYPES = setOf(WatchNextEntry.TYPE_TV_SERIES, WatchNextEntry.TYPE_TV_SEASON, WatchNextEntry.TYPE_TV_EPISODE)
         val TV_CONTENT_TYPES = setOf("series", "tv", "show", "episode")
     }
-}
-
-@SuppressLint("UseKtx")
-internal fun Drawable.toImageBitmap(sizePx: Int): ImageBitmap {
-    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    setBounds(0, 0, sizePx, sizePx)
-    draw(canvas)
-    return bitmap.asImageBitmap()
 }

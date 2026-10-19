@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -36,6 +38,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -55,17 +58,32 @@ import io.github.kesemb2.glasshome.ui.theme.Shapes
 import io.github.kesemb2.glasshome.ui.theme.Springs
 import kotlin.math.roundToInt
 
-/** Card geometry (DESIGN.md): 160 x 90 dp cards, 16 dp apart, labels below the focused card. */
-object CardMetrics {
-    val Width = 160.dp
-    val Height = 90.dp
-    val GapX = 16.dp
-    val LabelGap = 12.dp
-    val LabelHeight = 20.dp
-    val CellHeight = Height + LabelGap + LabelHeight
-    val RowPitch = 130.dp
-    const val COLUMNS = 5
+/**
+ * Card geometry for a number of grid columns (Settings › App size). The grid always spans the 864 dp content
+ * width with 16 dp gaps, so 5 columns give 160 x 90 dp cards and 8 give 94 x 53 dp. The focused card's name sits
+ * below it.
+ */
+@Immutable
+data class CardSize(val columns: Int) {
+    val width: Dp get() = (CONTENT_WIDTH - GAP * (columns - 1)) / columns
+    val height: Dp get() = width * (9f / 16f)
+    val gap: Dp get() = GAP
+    val labelGap: Dp get() = 10.dp
+    val labelHeight: Dp get() = 18.dp
+    val cellHeight: Dp get() = height + labelGap + labelHeight
+    val rowPitch: Dp get() = cellHeight + 8.dp
+
+    companion object {
+        val CONTENT_WIDTH = 864.dp
+        val GAP = 16.dp
+        const val MIN_COLUMNS = 5
+        const val MAX_COLUMNS = 8
+        const val DEFAULT_COLUMNS = 6
+    }
 }
+
+/** The card size chosen in Settings, for everything that lays out cards. */
+val LocalCardSize = staticCompositionLocalOf { CardSize(CardSize.DEFAULT_COLUMNS) }
 
 /** Remembers a card's layout coordinates so a menu can open next to it. */
 private class Anchor {
@@ -101,10 +119,11 @@ fun GridCard(
     }
     val labelAlpha by animateFloatAsState(if (showLabel && (focused || moving)) 1f else 0f, Springs.focus(), label = "label")
 
-    Column(modifier.width(CardMetrics.Width), horizontalAlignment = Alignment.CenterHorizontally) {
+    val size = LocalCardSize.current
+    Column(modifier.width(size.width), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier
-                .size(CardMetrics.Width, CardMetrics.Height)
+                .size(size.width, size.height)
                 .onPlaced { anchor.coordinates = it }
                 .then(if (moving) Modifier.wiggle() else Modifier)
                 .focusEffect(focused || moving, pressed, FocusStyle.Card, Shapes.Card)
@@ -115,11 +134,11 @@ fun GridCard(
             CardFace(item, visuals) { if (focused || moving) 1f else 0f }
         }
         if (showLabel) {
-            Spacer(Modifier.height(CardMetrics.LabelGap))
+            Spacer(Modifier.height(size.labelGap))
             BasicText(
                 text = label,
                 modifier = Modifier
-                    .height(CardMetrics.LabelHeight)
+                    .height(size.labelHeight)
                     .graphicsLayer { alpha = labelAlpha },
                 style = type.caption.copy(color = GlassColors.TextPrimary, textAlign = TextAlign.Center),
                 maxLines = 1,
@@ -148,6 +167,8 @@ fun AppFace(app: AppEntry, visual: AppVisual?, placeholder: Color, modifier: Mod
     }
     val type = LocalGlassType.current
     val color = visual?.color ?: placeholder
+    // Sized from the card height, so the fallback reads the same at every card size.
+    val cardHeight = LocalCardSize.current.height
     Box(
         modifier
             .fillMaxSize()
@@ -161,8 +182,8 @@ fun AppFace(app: AppEntry, visual: AppVisual?, placeholder: Color, modifier: Mod
             Box(
                 Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 12.dp)
-                    .size(44.dp)
+                    .padding(top = cardHeight * 0.13f)
+                    .size(cardHeight * 0.49f)
                     .drawWithCache { onDrawBehind { drawFitted(icon) } },
             )
         }
@@ -170,8 +191,12 @@ fun AppFace(app: AppEntry, visual: AppVisual?, placeholder: Color, modifier: Mod
             text = app.label,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(start = 10.dp, end = 10.dp, bottom = 9.dp),
-            style = type.caption.copy(color = GlassColors.TextPrimary, textAlign = TextAlign.Center),
+                .padding(start = 8.dp, end = 8.dp, bottom = cardHeight * 0.09f),
+            style = type.caption.copy(
+                color = GlassColors.TextPrimary,
+                textAlign = TextAlign.Center,
+                fontSize = type.caption.fontSize * (cardHeight / 90.dp).coerceIn(0.8f, 1f),
+            ),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

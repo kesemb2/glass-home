@@ -21,6 +21,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -29,6 +34,9 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.kesemb2.glasshome.BuildConfig
 import io.github.kesemb2.glasshome.R
+import io.github.kesemb2.glasshome.data.settings.AppLanguage
+import io.github.kesemb2.glasshome.data.settings.AppSettings
+import io.github.kesemb2.glasshome.ui.apps.CardSize
 import io.github.kesemb2.glasshome.ui.components.MenuRow
 import io.github.kesemb2.glasshome.ui.glass.glass
 import io.github.kesemb2.glasshome.ui.glass.glassShadow
@@ -42,10 +50,17 @@ import io.github.kesemb2.glasshome.ui.theme.Spacing
 
 /** Settings: a glass panel at the end side of the screen, over the blurred home screen. */
 @Composable
-fun SettingsSheet(page: SettingsPage, top: Boolean, apps: AppsController, onPage: (SettingsPage) -> Unit) {
+fun SettingsSheet(
+    page: SettingsPage,
+    top: Boolean,
+    apps: AppsController,
+    onPage: (SettingsPage) -> Unit,
+    onLanguage: (String) -> Unit,
+    onCovering: (Boolean) -> Unit,
+) {
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val slidePx = with(LocalDensity.current) { 48.dp.toPx() } * (if (rtl) -1f else 1f)
-    OverlayLayer(top = top, dim = 0.3f) { appear ->
+    OverlayLayer(top = top, dim = 0.3f, onCovering = onCovering) { appear ->
         Column(
             Modifier
                 .align(Alignment.CenterEnd)
@@ -60,6 +75,7 @@ fun SettingsSheet(page: SettingsPage, top: Boolean, apps: AppsController, onPage
             key(page) {
                 when (page) {
                     SettingsPage.Main -> MainPage(apps, onPage)
+                    SettingsPage.Language -> LanguagePage(apps.settings.language, onLanguage)
                     SettingsPage.Hidden -> HiddenPage(apps)
                     SettingsPage.About -> AboutPage()
                 }
@@ -101,14 +117,50 @@ private fun ColumnScope.MainPage(apps: AppsController, onPage: (SettingsPage) ->
     val off = stringResource(R.string.settings_off)
     fun state(value: Boolean) = if (value) on else off
 
+    val sizeNames = mapOf(
+        5 to stringResource(R.string.size_large),
+        6 to stringResource(R.string.size_medium),
+        7 to stringResource(R.string.size_small),
+        8 to stringResource(R.string.size_extra_small),
+    )
+
     Title(stringResource(R.string.settings_title))
     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+        MenuRow(
+            text = stringResource(R.string.settings_language),
+            trailing = languageName(settings.language),
+            onClick = { onPage(SettingsPage.Language) },
+            modifier = Modifier.focusRequester(first),
+        )
+        ChoiceRow(
+            text = stringResource(R.string.settings_app_size),
+            secondary = stringResource(R.string.settings_app_size_hint),
+            options = (CardSize.MIN_COLUMNS..CardSize.MAX_COLUMNS).toList(),
+            selected = settings.appColumns,
+            label = { sizeNames[it] ?: it.toString() },
+            onSelect = apps::setAppColumns,
+        )
+        ChoiceRow(
+            text = stringResource(R.string.settings_logo_size),
+            secondary = stringResource(R.string.settings_logo_size_hint),
+            options = AppSettings.LOGO_PERCENTS,
+            selected = settings.logoPercent,
+            label = { "$it%" },
+            onSelect = { settings.logoPercent = it },
+        )
+        ChoiceRow(
+            text = stringResource(R.string.settings_text_size),
+            secondary = stringResource(R.string.settings_text_size_hint),
+            options = AppSettings.TEXT_PERCENTS,
+            selected = settings.textPercent,
+            label = { "$it%" },
+            onSelect = { settings.textPercent = it },
+        )
         MenuRow(
             text = stringResource(R.string.settings_phone_apps),
             secondary = stringResource(R.string.settings_phone_apps_hint),
             trailing = state(settings.showPhoneApps),
             onClick = { apps.setShowPhoneApps(!settings.showPhoneApps) },
-            modifier = Modifier.focusRequester(first),
         )
         MenuRow(
             text = stringResource(R.string.settings_auto_advance),
@@ -139,6 +191,69 @@ private fun ColumnScope.MainPage(apps: AppsController, onPage: (SettingsPage) ->
             icon = R.drawable.ic_info,
             onClick = { onPage(SettingsPage.About) },
         )
+    }
+}
+
+/**
+ * A row whose value steps with Left/Right (towards the end of the line = next) and cycles with OK. The value is
+ * shown between angle marks as a hint that it can be changed.
+ */
+@Composable
+private fun <T> ChoiceRow(
+    text: String,
+    secondary: String?,
+    options: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
+) {
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val index = options.indexOf(selected).coerceAtLeast(0)
+    MenuRow(
+        text = text,
+        secondary = secondary,
+        trailing = "‹  ${label(options[index])}  ›",
+        onClick = { onSelect(options[(index + 1) % options.size]) },
+        modifier = Modifier.onPreviewKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            val next = if (rtl) Key.DirectionLeft else Key.DirectionRight
+            val previous = if (rtl) Key.DirectionRight else Key.DirectionLeft
+            when (event.key) {
+                next -> {
+                    if (index < options.lastIndex) onSelect(options[index + 1])
+                    true
+                }
+                previous -> {
+                    if (index > 0) onSelect(options[index - 1])
+                    true
+                }
+                else -> false
+            }
+        },
+    )
+}
+
+@Composable
+private fun languageName(language: String): String = when (language) {
+    AppLanguage.HEBREW -> "עברית"
+    AppLanguage.ENGLISH -> "English"
+    else -> stringResource(R.string.settings_language_system)
+}
+
+/** The app's language, independent of the TV's; choosing one restarts the home screen in it. */
+@Composable
+private fun ColumnScope.LanguagePage(current: String, onLanguage: (String) -> Unit) {
+    val first = rememberFirstFocus()
+    Title(stringResource(R.string.settings_language))
+    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+        AppLanguage.ALL.forEachIndexed { i, language ->
+            MenuRow(
+                text = languageName(language),
+                trailing = if (language == current) "✓" else null,
+                onClick = { if (language != current) onLanguage(language) },
+                modifier = if (i == 0) Modifier.focusRequester(first) else Modifier,
+            )
+        }
     }
 }
 

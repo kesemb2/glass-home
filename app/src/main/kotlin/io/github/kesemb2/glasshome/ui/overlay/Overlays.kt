@@ -21,12 +21,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -80,7 +82,8 @@ object ScreenSnapshot {
     private const val RADIUS = 4
     private const val TIMEOUT_MS = 250L
 
-    suspend fun capture(view: View): ImageBitmap? {
+    /** The blurred screen, darkened by [dim] (baked in, so the overlay draws it in one pass). */
+    suspend fun capture(view: View, dim: Float): ImageBitmap? {
         val window = view.findWindow() ?: return null
         val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
         val copied = withTimeoutOrNull(TIMEOUT_MS) { copy(window, bitmap) } ?: false
@@ -92,6 +95,7 @@ object ScreenSnapshot {
             val pixels = IntArray(WIDTH * HEIGHT)
             bitmap.getPixels(pixels, 0, WIDTH, 0, 0, WIDTH, HEIGHT)
             FastBlur.blur(pixels, WIDTH, HEIGHT, RADIUS)
+            if (dim > 0f) FastBlur.saturate(pixels, 1f, gain = 1f - dim)
             bitmap.setPixels(pixels, 0, WIDTH, 0, 0, WIDTH, HEIGHT)
             bitmap.asImageBitmap()
         }
@@ -124,19 +128,34 @@ object ScreenSnapshot {
  * A full-screen layer over the home screen: the blurred snapshot, darkened by [dim], with glass inside it
  * refracting that snapshot. Only the [top] layer can take focus. The layer stays invisible until its snapshot is
  * taken (so the snapshot never contains the layer itself), then fades in; [content] gets the appear progress.
+ * Once it is fully shown it hides everything under it ([onCovering]), which then costs nothing to draw.
  */
 @Composable
-fun OverlayLayer(top: Boolean, dim: Float, content: @Composable BoxScope.(appear: () -> Float) -> Unit) {
+fun OverlayLayer(
+    top: Boolean,
+    dim: Float,
+    onCovering: (Boolean) -> Unit = {},
+    content: @Composable BoxScope.(appear: () -> Float) -> Unit,
+) {
     val view = LocalView.current
     val backdrop = remember { GlassBackdrop() }
     var snapshot by remember { mutableStateOf<ImageBitmap?>(null) }
     var ready by remember { mutableStateOf(false) }
     val appear = remember { Animatable(0f) }
+    val covering = rememberUpdatedState(onCovering)
+    var covered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        snapshot = ScreenSnapshot.capture(view)
+        snapshot = ScreenSnapshot.capture(view, dim)
         backdrop.set(snapshot)
         ready = true
         appear.animateTo(1f, Springs.overlay())
+        if (snapshot != null) {
+            covered = true
+            covering.value(true)
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { if (covered) covering.value(false) }
     }
     CompositionLocalProvider(LocalGlassBackdrop provides backdrop, LocalFocusAllowed provides top) {
         Box(
@@ -154,7 +173,6 @@ fun OverlayLayer(top: Boolean, dim: Float, content: @Composable BoxScope.(appear
                             dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
                             filterQuality = FilterQuality.Low,
                         )
-                        drawRect(Color.Black.copy(alpha = dim))
                     } else {
                         drawRect(Color.Black.copy(alpha = max(dim, 0.7f)))
                     }

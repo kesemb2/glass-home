@@ -21,7 +21,7 @@ import kotlin.math.roundToInt
 
 /** What an app card draws: the TV banner, or the icon on its dominant colour. */
 @Immutable
-class AppVisual(val banner: ImageBitmap?, val icon: ImageBitmap?, val color: Color, val updatedAt: Long)
+class AppVisual(val banner: ImageBitmap?, val icon: ImageBitmap?, val color: Color, val updatedAt: Long, val width: Int)
 
 /**
  * Card images for the launcher's apps, rendered once at the size they are shown at (banners at card size,
@@ -47,13 +47,17 @@ class AppVisuals(private val context: Context) {
     /** The cached dominant colour while the image is still loading. */
     fun placeholder(pkg: String): Color = Color(colors[pkg] ?: DominantColor.FALLBACK)
 
-    /** Loads what is missing or outdated, in the order given (the favorites first), publishing in small batches. */
-    suspend fun load(apps: List<AppEntry>) {
-        val pending = apps.filter { loaded[it.packageName]?.updatedAt != it.updatedAt }
+    /**
+     * Loads what is missing, outdated or rendered at another card size ([cardWidth] x [cardHeight] px), in the
+     * order given (the favorites first), publishing in small batches. Until a card is re-rendered it keeps its old
+     * image, scaled.
+     */
+    suspend fun load(apps: List<AppEntry>, cardWidth: Int, cardHeight: Int) {
+        val pending = apps.filter { app ->
+            loaded[app.packageName]?.let { it.updatedAt != app.updatedAt || it.width != cardWidth } ?: true
+        }
         if (pending.isEmpty()) return
         val density = context.resources.displayMetrics.density
-        val cardWidth = (CARD_WIDTH_DP * density).roundToInt()
-        val cardHeight = (CARD_HEIGHT_DP * density).roundToInt()
         val iconSize = (ICON_DP * density).roundToInt()
         for (batch in pending.chunked(BATCH)) {
             val rendered = withContext(Dispatchers.IO) {
@@ -106,6 +110,7 @@ class AppVisuals(private val context: Context) {
             icon = icon?.toGpu()?.asImageBitmap(),
             color = Color(color),
             updatedAt = app.updatedAt,
+            width = width,
         )
     }
 
@@ -132,8 +137,6 @@ class AppVisuals(private val context: Context) {
     }
 
     companion object {
-        const val CARD_WIDTH_DP = 160f
-        const val CARD_HEIGHT_DP = 90f
         const val ICON_DP = 48f
         private const val SAMPLE = 24
         private const val BATCH = 8

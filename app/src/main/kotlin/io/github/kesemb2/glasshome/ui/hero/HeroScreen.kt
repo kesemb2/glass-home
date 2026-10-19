@@ -3,6 +3,11 @@ package io.github.kesemb2.glasshome.ui.hero
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
@@ -43,11 +48,14 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
@@ -62,10 +70,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.kesemb2.glasshome.GlassHomeApp
 import io.github.kesemb2.glasshome.R
 import io.github.kesemb2.glasshome.data.hero.HeroItem
@@ -76,6 +86,7 @@ import io.github.kesemb2.glasshome.image.bitmapFor
 import io.github.kesemb2.glasshome.image.rememberImage
 import io.github.kesemb2.glasshome.image.rememberLoadedImage
 import io.github.kesemb2.glasshome.ui.components.GlassButton
+import io.github.kesemb2.glasshome.ui.glass.GlassBackdrop
 import io.github.kesemb2.glasshome.ui.glass.GlassShade
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassBackdrop
 import io.github.kesemb2.glasshome.ui.glass.glass
@@ -99,13 +110,17 @@ private const val PAUSE_AFTER_KEY_MS = 20_000L
 private const val STAGGER_MS = 40L
 private val PARALLAX = 24.dp
 
-/** The hero text ends above the favorites shelf (27 dp margin + 122 dp shelf + 24 dp gap). */
-val HERO_CONTENT_BOTTOM = 173.dp
-private val CONTENT_BOTTOM = HERO_CONTENT_BOTTOM
 private val LOGO_MAX_WIDTH = 380.dp
 private val LOGO_MAX_HEIGHT = 96.dp
 private val LOGO_PLACEHOLDER = 72.dp
-private val SYNOPSIS_WIDTH = 520.dp
+private val SYNOPSIS_WIDTH = 480.dp
+private val PROGRESS_WIDTH = 110.dp
+
+// Hero detail type sizes at 100% (Settings › Text size scales them).
+private val META_SIZE = 14.sp
+private val BODY_SIZE = 14.sp
+private val BODY_LINE = 19.sp
+private val CAPTION_SIZE = 12.sp
 
 /** Darkening over the blurred backdrop behind the app grid (and inside glass there). */
 const val GRID_DIM = 0.4f
@@ -116,8 +131,9 @@ const val GRID_DIM = 0.4f
  * 20 s after any key press. Hold OK on Play for "Remove from Continue Watching".
  *
  * The backdrop stays fixed; the text moves up with [camera] (px) and fades out as [grid] goes to 1, while the
- * backdrop cross-fades to a heavily blurred, darker version for the app grid ([inGrid]). [focusModifier] goes on
- * Play (or Allow), before its focus target.
+ * backdrop cross-fades to a heavily blurred, darker version for the app grid, which [gridGlass] also gets for the
+ * glass there. The text ends [contentBottom] above the screen's bottom edge (above the favorites shelf).
+ * [focusModifier] goes on Play (or Allow), before its focus target.
  */
 @Composable
 fun HeroScreen(
@@ -126,7 +142,10 @@ fun HeroScreen(
     lastKeyAt: () -> Long,
     camera: () -> Float,
     grid: () -> Float,
-    inGrid: Boolean,
+    contentBottom: Dp,
+    logoScale: Float,
+    textScale: Float,
+    gridGlass: GlassBackdrop,
     focusModifier: Modifier,
     onPlay: (HeroItem) -> Unit,
     onDismiss: (HeroItem) -> Unit,
@@ -161,12 +180,18 @@ fun HeroScreen(
         HeroImages.loadBackdrop(loader, ctx, url, widthPx, heightPx)
     }
     val dim by rememberImage(backdropUrl) { ctx, url -> HeroImages.dimmed(ctx, url) }
-    // Glass refracts what is behind it: the soft source over the hero, the grid's blur behind the grid.
-    LaunchedEffect(soft, dim, inGrid) {
-        val source = if (inGrid && dim is ImageState.Ready) dim else soft
-        when (val b = source) {
+    // Glass refracts what is behind it: the soft source over the hero, the grid's blur in the grid.
+    LaunchedEffect(soft) {
+        when (val b = soft) {
             is ImageState.Ready -> glass?.show(b.bitmap)
             ImageState.Failed -> glass?.show(null)
+            ImageState.Loading -> Unit
+        }
+    }
+    LaunchedEffect(dim) {
+        when (val b = dim) {
+            is ImageState.Ready -> gridGlass.show(b.bitmap)
+            ImageState.Failed -> gridGlass.show(null)
             ImageState.Loading -> Unit
         }
     }
@@ -201,7 +226,7 @@ fun HeroScreen(
     // Glass surfaces get the same scrims and the same overscan zoom as the backdrop behind them.
     val overscanPx = with(LocalDensity.current) { PARALLAX.toPx() }
     DisposableEffect(glass, rtl, overscanPx) {
-        glass?.shade = { root -> HeroScrim.shade(root.width, root.height, rtl).fadeTo(grid(), GRID_DIM) }
+        glass?.shade = { root -> HeroScrim.shade(root.width, root.height, rtl) }
         glass?.zoom = 1f + 2f * overscanPx / metrics.widthPixels
         onDispose {
             glass?.shade = null
@@ -234,7 +259,7 @@ fun HeroScreen(
             Column(
                 Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = Spacing.ScreenHorizontal, bottom = CONTENT_BOTTOM),
+                    .padding(start = Spacing.ScreenHorizontal, bottom = contentBottom),
             ) {
                 AnimatedContent(
                     targetState = item,
@@ -242,7 +267,7 @@ fun HeroScreen(
                     contentAlignment = Alignment.BottomStart,
                     contentKey = { it.key },
                     label = "heroText",
-                ) { target -> HeroText(target, rtl) }
+                ) { target -> HeroText(target, rtl, heroFocused, logoScale, textScale) }
                 Spacer(Modifier.height(Spacing.XL))
                 GlassButton(
                     text = stringResource(if (item.progress != null) R.string.hero_resume else R.string.hero_play),
@@ -270,11 +295,11 @@ fun HeroScreen(
                     selected = index,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = Spacing.ScreenHorizontal, bottom = CONTENT_BOTTOM + 14.dp),
+                        .padding(end = Spacing.ScreenHorizontal, bottom = contentBottom + 14.dp),
                 )
             }
         } else if (state.loaded) {
-            EmptyHero(state, onRequestAccess, focusModifier, Modifier.align(Alignment.BottomStart))
+            EmptyHero(state, onRequestAccess, focusModifier, contentBottom, Modifier.align(Alignment.BottomStart))
         }
 
         if (menuOpen && item != null) {
@@ -286,7 +311,7 @@ fun HeroScreen(
                 },
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = Spacing.ScreenHorizontal, bottom = CONTENT_BOTTOM + 60.dp),
+                    .padding(start = Spacing.ScreenHorizontal, bottom = contentBottom + 60.dp),
             )
         }
     }
@@ -353,25 +378,33 @@ private fun DrawScope.drawCover(image: ImageBitmap, alpha: Float, offsetX: Float
     )
 }
 
-/** Start-side and bottom scrims keep the text legible over any backdrop; they fade out over the grid. */
+/**
+ * Start-side and bottom scrims keep the text legible over any backdrop; they fade out over the grid. Both are
+ * baked into one small bitmap drawn stretched (smooth ramps survive the scaling), so they cost one pass instead
+ * of two full-screen gradients: the TV's memory bandwidth, not its GPU, is the limit at 1080p.
+ */
 @Composable
 private fun Scrims(rtl: Boolean, alpha: () -> Float) {
     Spacer(
         Modifier
             .fillMaxSize()
             .drawWithCache {
-                val brushes = HeroScrim.shade(size.width, size.height, rtl).brushes()
+                val scrim = HeroScrim.bitmap(HeroScrim.shade(size.width, size.height, rtl), size)
+                val dst = IntSize(size.width.roundToInt(), size.height.roundToInt())
                 onDrawBehind {
                     val a = alpha().coerceIn(0f, 1f)
-                    if (a > 0f) brushes.forEach { drawRect(it, alpha = a) }
+                    if (a > 0f) drawImage(scrim, dstSize = dst, alpha = a, filterQuality = FilterQuality.Low)
                 }
             },
     )
 }
 
-/** Behind the app grid: the backdrop heavily blurred and darkened, faded in by [amount]. */
+/** Behind the app grid: the backdrop heavily blurred and darkened (one pass), faded in by [amount]. */
 @Composable
 private fun GridBackdrop(image: ImageBitmap?, amount: () -> Float) {
+    val darken = remember {
+        ColorFilter.lighting(multiply = Color(1f - GRID_DIM, 1f - GRID_DIM, 1f - GRID_DIM), add = Color.Black)
+    }
     Spacer(
         Modifier
             .fillMaxSize()
@@ -383,16 +416,20 @@ private fun GridBackdrop(image: ImageBitmap?, amount: () -> Float) {
                         image = image,
                         dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
                         alpha = a,
+                        colorFilter = darken,
                         filterQuality = FilterQuality.Low,
                     )
+                } else {
+                    drawRect(Color.Black, alpha = GRID_DIM * a)
                 }
-                drawRect(Color.Black, alpha = GRID_DIM * a)
             },
     )
 }
 
 /** Start-side (85% black over 60% of the width) and bottom (90% black over 55% of the height) scrims. */
 private object HeroScrim {
+    private const val BITMAP_WIDTH = 192
+
     fun shade(width: Float, height: Float, rtl: Boolean) = GlassShade(
         fromX = if (rtl) width else 0f,
         toX = if (rtl) width * 0.4f else width * 0.6f,
@@ -401,6 +438,25 @@ private object HeroScrim {
         toY = height,
         alphaY = 0.9f,
     )
+
+    /** Both ramps of [shade] as one black bitmap with the combined alpha, at a small size with [size]'s shape. */
+    fun bitmap(shade: GlassShade, size: Size): ImageBitmap {
+        val w = BITMAP_WIDTH
+        val h = max(1, (BITMAP_WIDTH * size.height / size.width).roundToInt())
+        val sx = size.width / w
+        val sy = size.height / h
+        val pixels = IntArray(w * h)
+        for (y in 0 until h) {
+            // Sample at pixel centres in screen coordinates, the same formula the glass shader uses.
+            val ay = shade.alphaY * ((((y + 0.5f) * sy) - shade.fromY) / (shade.toY - shade.fromY)).coerceIn(0f, 1f)
+            for (x in 0 until w) {
+                val ax = shade.alphaX * ((((x + 0.5f) * sx) - shade.toX) / (shade.fromX - shade.toX)).coerceIn(0f, 1f)
+                val a = 1f - (1f - ax) * (1f - ay)
+                pixels[y * w + x] = (a * 255f).roundToInt().coerceIn(0, 255) shl 24
+            }
+        }
+        return android.graphics.Bitmap.createBitmap(pixels, w, h, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
+    }
 }
 
 @Composable
@@ -419,28 +475,25 @@ private fun Modifier.stagger(progress: Animatable<Float, AnimationVector1D>, off
         translationX = (1f - progress.value) * offsetPx
     }
 
-/** Source app, logo, metadata, synopsis and progress, fading/sliding in with a short stagger. */
+/**
+ * Logo and the episode or movie line; the synopsis and time left appear under them only while Play is focused
+ * ([showDetails]). Everything fades/slides in with a short stagger when the item changes. Sizes follow Settings
+ * ([logoScale] for the logo or title, [textScale] for the rest).
+ */
 @Composable
-private fun HeroText(item: HeroItem, rtl: Boolean) {
+private fun HeroText(item: HeroItem, rtl: Boolean, showDetails: Boolean, logoScale: Float, textScale: Float) {
     val type = LocalGlassType.current
     val offsetPx = with(LocalDensity.current) { 18.dp.toPx() } * (if (rtl) -1f else 1f)
+    val metaStyle = type.callout.copy(color = GlassColors.TextSecondary, fontSize = META_SIZE * textScale)
+    val bodyStyle = type.body.copy(
+        color = GlassColors.TextPrimary.copy(alpha = 0.8f),
+        fontSize = BODY_SIZE * textScale,
+        lineHeight = BODY_LINE * textScale,
+    )
+    val captionStyle = type.caption.copy(color = GlassColors.TextSecondary, fontSize = CAPTION_SIZE * textScale)
 
     Column {
-        if (item.appLabel != null) {
-            Row(
-                Modifier.stagger(rememberStagger(0), offsetPx),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                item.appIcon?.let {
-                    Image(bitmap = it, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(Spacing.S))
-                }
-                BasicText(item.appLabel, style = type.caption.copy(color = GlassColors.TextSecondary))
-            }
-            Spacer(Modifier.height(Spacing.M))
-        }
-
-        HeroLogo(item, Modifier.stagger(rememberStagger(1), offsetPx))
+        HeroLogo(item, logoScale, Modifier.stagger(rememberStagger(0), offsetPx))
 
         val meta = buildList {
             item.season?.let { add(stringResource(R.string.hero_season, it)) }
@@ -462,57 +515,65 @@ private fun HeroText(item: HeroItem, rtl: Boolean) {
             }
         }
         if (meta.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
             BasicText(
                 text = meta.joinToString("  ·  "),
-                modifier = Modifier.stagger(rememberStagger(2), offsetPx).widthIn(max = SYNOPSIS_WIDTH),
-                style = type.callout.copy(color = GlassColors.TextSecondary),
+                modifier = Modifier.stagger(rememberStagger(1), offsetPx).widthIn(max = SYNOPSIS_WIDTH),
+                style = metaStyle,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        item.synopsis?.let {
-            Spacer(Modifier.height(Spacing.S))
-            BasicText(
-                text = it,
-                modifier = Modifier.stagger(rememberStagger(3), offsetPx).width(SYNOPSIS_WIDTH),
-                style = type.body.copy(color = GlassColors.TextPrimary.copy(alpha = 0.85f)),
-                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
 
         val progress = item.progress
         val remaining = item.remainingMillis
-        if (progress != null && remaining != null) {
-            Spacer(Modifier.height(Spacing.L))
-            Row(
-                Modifier.stagger(rememberStagger(4), offsetPx),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ProgressBar(progress, rtl)
-                Spacer(Modifier.width(10.dp))
-                val (h, m) = HeroFormat.remaining(remaining)
-                BasicText(
-                    text = when {
-                        h > 0 && m > 0 -> stringResource(R.string.hero_left_h_min, h, m)
-                        h > 0 -> stringResource(R.string.hero_left_h, h)
-                        else -> stringResource(R.string.hero_left_min, m)
-                    },
-                    style = type.caption.copy(color = GlassColors.TextSecondary),
-                )
+        val hasDetails = item.synopsis != null || (progress != null && remaining != null)
+        AnimatedVisibility(
+            visible = showDetails && hasDetails,
+            enter = fadeIn(Springs.content()) + expandVertically(Springs.content(IntSize.VisibilityThreshold)),
+            exit = fadeOut(Springs.exit()) + shrinkVertically(Springs.content(IntSize.VisibilityThreshold)),
+        ) {
+            Column {
+                item.synopsis?.let {
+                    Spacer(Modifier.height(Spacing.S))
+                    BasicText(
+                        text = it,
+                        modifier = Modifier.stagger(rememberStagger(2), offsetPx).width(SYNOPSIS_WIDTH),
+                        style = bodyStyle,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (progress != null && remaining != null) {
+                    Spacer(Modifier.height(Spacing.M))
+                    Row(
+                        Modifier.stagger(rememberStagger(3), offsetPx),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ProgressBar(progress, rtl, PROGRESS_WIDTH * textScale)
+                        Spacer(Modifier.width(8.dp))
+                        val (h, m) = HeroFormat.remaining(remaining)
+                        BasicText(
+                            text = when {
+                                h > 0 && m > 0 -> stringResource(R.string.hero_left_h_min, h, m)
+                                h > 0 -> stringResource(R.string.hero_left_h, h)
+                                else -> stringResource(R.string.hero_left_min, m)
+                            },
+                            style = captionStyle,
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ProgressBar(progress: Float, rtl: Boolean) {
+private fun ProgressBar(progress: Float, rtl: Boolean, width: Dp) {
     Spacer(
         Modifier
-            .width(140.dp)
-            .height(4.dp)
+            .width(width)
+            .height(3.dp)
             .drawBehind {
                 val radius = CornerRadius(size.height / 2f)
                 drawRoundRect(GlassColors.ProgressTrack, cornerRadius = radius)
@@ -527,19 +588,19 @@ private fun ProgressBar(progress: Float, rtl: Boolean) {
     )
 }
 
-/** Logo fitted into 380 x 120 dp, start-aligned; the title as large text when there is no logo. */
+/** Logo fitted into 380 x 96 dp x [scale], start-aligned; the title as large text when there is no logo. */
 @Composable
-private fun HeroLogo(item: HeroItem, modifier: Modifier) {
+private fun HeroLogo(item: HeroItem, scale: Float, modifier: Modifier) {
     val type = LocalGlassType.current
     val logo by rememberImage(item.logoUrl) { ctx, url -> HeroImages.logo(ctx, url) }
     when (val state = logo) {
-        is ImageState.Ready -> LogoImage(state.bitmap, modifier)
-        ImageState.Loading -> Spacer(modifier.height(LOGO_PLACEHOLDER))
+        is ImageState.Ready -> LogoImage(state.bitmap, LOGO_MAX_WIDTH * scale, LOGO_MAX_HEIGHT * scale, modifier)
+        ImageState.Loading -> Spacer(modifier.height(LOGO_PLACEHOLDER * scale))
         // Until TMDB has answered, keep the logo's space instead of flashing the title.
-        ImageState.Failed -> if (!item.enriched) Spacer(modifier.height(LOGO_PLACEHOLDER)) else BasicText(
+        ImageState.Failed -> if (!item.enriched) Spacer(modifier.height(LOGO_PLACEHOLDER * scale)) else BasicText(
             text = item.title,
             modifier = modifier.widthIn(max = SYNOPSIS_WIDTH),
-            style = type.display.copy(color = GlassColors.TextPrimary),
+            style = type.display.copy(color = GlassColors.TextPrimary, fontSize = type.display.fontSize * scale),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
@@ -547,13 +608,13 @@ private fun HeroLogo(item: HeroItem, modifier: Modifier) {
 }
 
 @Composable
-private fun LogoImage(bitmap: ImageBitmap, modifier: Modifier) {
+private fun LogoImage(bitmap: ImageBitmap, maxWidth: Dp, maxHeight: Dp, modifier: Modifier) {
     val density = LocalDensity.current
     val pad = HeroImages.LOGO_PAD_PX
     val contentWidth = (bitmap.width - 2 * pad).coerceAtLeast(1)
     val contentHeight = (bitmap.height - 2 * pad).coerceAtLeast(1)
     val scale = with(density) {
-        min(LOGO_MAX_WIDTH.toPx() / contentWidth, LOGO_MAX_HEIGHT.toPx() / contentHeight)
+        min(maxWidth.toPx() / contentWidth, maxHeight.toPx() / contentHeight)
     }
     val width = with(density) { (contentWidth * scale).toDp() }
     val height = with(density) { (contentHeight * scale).toDp() }
@@ -631,14 +692,20 @@ private fun HeroMenu(rtl: Boolean, onRemove: () -> Unit, modifier: Modifier) {
 }
 
 @Composable
-private fun EmptyHero(state: HeroUiState, onRequestAccess: () -> Unit, focusModifier: Modifier, modifier: Modifier) {
+private fun EmptyHero(
+    state: HeroUiState,
+    onRequestAccess: () -> Unit,
+    focusModifier: Modifier,
+    contentBottom: Dp,
+    modifier: Modifier,
+) {
     val type = LocalGlassType.current
     val (title, body) = when (state.access) {
         AccessState.Requestable -> R.string.empty_access_title to R.string.empty_access_body
         AccessState.Blocked -> R.string.empty_blocked_title to R.string.empty_blocked_body
         else -> R.string.empty_none_title to R.string.empty_none_body
     }
-    Column(modifier.padding(start = Spacing.ScreenHorizontal, bottom = CONTENT_BOTTOM).width(SYNOPSIS_WIDTH)) {
+    Column(modifier.padding(start = Spacing.ScreenHorizontal, bottom = contentBottom).width(SYNOPSIS_WIDTH)) {
         BasicText(stringResource(title), style = type.title1.copy(color = GlassColors.TextPrimary))
         Spacer(Modifier.height(Spacing.S))
         BasicText(stringResource(body), style = type.body.copy(color = GlassColors.TextSecondary))

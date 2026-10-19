@@ -81,7 +81,7 @@ fun menuContent(context: Context, menu: Overlay.Menu, view: HomeView, apps: Apps
                             apps.addToFolder(app.packageName, folder.folder.id)
                         }
                     } + MenuAction(R.drawable.ic_folder_new, s(R.string.menu_new_folder)) {
-                        val id = apps.newFolder(app.packageName)
+                        val id = apps.newFolder(app.packageName) { n -> context.getString(R.string.folder_default_name, n) }
                         nav.closeTop(GRID_PREFIX + GridKey.folder(id))
                     },
                 )

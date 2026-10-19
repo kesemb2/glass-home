@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.github.kesemb2.glasshome.R
@@ -47,9 +48,10 @@ import kotlin.math.roundToInt
 fun CardGrid(
     items: List<GridItem>,
     modifier: Modifier = Modifier,
-    columns: Int = CardMetrics.COLUMNS,
     cell: @Composable (item: GridItem) -> Unit,
 ) {
+    val size = LocalCardSize.current
+    val columns = size.columns
     Layout(
         content = {
             items.forEach { item ->
@@ -58,10 +60,10 @@ fun CardGrid(
         },
         modifier = modifier,
     ) { measurables, _ ->
-        val cellWidth = CardMetrics.Width.roundToPx()
-        val cellHeight = CardMetrics.CellHeight.roundToPx()
-        val gap = CardMetrics.GapX.roundToPx()
-        val pitch = CardMetrics.RowPitch.roundToPx()
+        val cellWidth = size.width.roundToPx()
+        val cellHeight = size.cellHeight.roundToPx()
+        val gap = size.gap.roundToPx()
+        val pitch = size.rowPitch.roundToPx()
         val placeables = measurables.map { it.measure(Constraints.fixed(cellWidth, cellHeight)) }
         val rows = (placeables.size + columns - 1) / columns
         val width = columns * cellWidth + (columns - 1) * gap
@@ -73,12 +75,14 @@ fun CardGrid(
 }
 
 /** Grid rows needed for [count] cells. */
-fun gridRows(count: Int, columns: Int = CardMetrics.COLUMNS): Int = (count + columns - 1) / columns
+fun gridRows(count: Int, columns: Int): Int = (count + columns - 1) / columns
 
+/** The shelf: as wide as the grid plus its padding, one card high. */
 object ShelfMetrics {
     val Padding = 16.dp
-    val Width = CardMetrics.Width * CardMetrics.COLUMNS + CardMetrics.GapX * (CardMetrics.COLUMNS - 1) + Padding * 2
-    val Height = CardMetrics.Height + Padding * 2
+    val Width = CardSize.CONTENT_WIDTH + Padding * 2
+
+    fun height(size: CardSize): Dp = size.height + Padding * 2
 }
 
 /**
@@ -100,7 +104,8 @@ fun FavoritesShelf(
 ) {
     val type = LocalGlassType.current
     val window = remember { IntArray(1) }
-    val visibleCount = CardMetrics.COLUMNS
+    val size = LocalCardSize.current
+    val visibleCount = size.columns
     val focusedIndex = apps.indexOfFirst { it.packageName == focusedPkg }
     var start = window[0]
     if (focusedIndex >= 0) {
@@ -109,12 +114,12 @@ fun FavoritesShelf(
     }
     start = start.coerceIn(0, max(0, apps.size - visibleCount))
     window[0] = start
-    val pitchPx = with(LocalDensity.current) { (CardMetrics.Width + CardMetrics.GapX).toPx() }
+    val pitchPx = with(LocalDensity.current) { (size.width + size.gap).toPx() }
     val scroll by animateFloatAsState(start * pitchPx, Springs.focus(), label = "shelfScroll")
 
     Box(
         modifier
-            .size(ShelfMetrics.Width, ShelfMetrics.Height)
+            .size(ShelfMetrics.Width, ShelfMetrics.height(size))
             .glassShadow(Shapes.Shelf, 16.dp)
             .glass(Shapes.Shelf)
             // Down goes to the grid card under the focused one (the grid starts off screen).
@@ -158,9 +163,9 @@ fun FavoritesShelf(
                 .padding(ShelfMetrics.Padding)
                 .offset { IntOffset(-scroll.roundToInt(), 0) },
         ) { measurables, _ ->
-            val cellWidth = CardMetrics.Width.roundToPx()
-            val cellHeight = CardMetrics.Height.roundToPx()
-            val gap = CardMetrics.GapX.roundToPx()
+            val cellWidth = size.width.roundToPx()
+            val cellHeight = size.height.roundToPx()
+            val gap = size.gap.roundToPx()
             val placeables = measurables.map { it.measure(Constraints.fixed(cellWidth, cellHeight)) }
             layout(visibleCount * cellWidth + (visibleCount - 1) * gap, cellHeight) {
                 placeables.forEachIndexed { i, p -> p.placeRelative(i * (cellWidth + gap), 0) }

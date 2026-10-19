@@ -57,4 +57,18 @@
     <string name="settings_unhide">הצגה</string>
     <string name="settings_about">אודות</string>
     <string name="about_version">גרסה %1$s (%2$s)</string>
+
+    <!-- Settings: language and sizes -->
+    <string name="settings_language">שפה</string>
+    <string name="settings_language_system">כמו בטלוויזיה</string>
+    <string name="settings_app_size">גודל האפליקציות</string>
+    <string name="settings_app_size_hint">החצים ‹ › משנים</string>
+    <string name="settings_logo_size">גודל הלוגו</string>
+    <string name="settings_logo_size_hint">הלוגו או השם ב״המשך צפייה״</string>
+    <string name="settings_text_size">גודל טקסט הפרטים</string>
+    <string name="settings_text_size_hint">שורת הפרק, התקציר והזמן שנותר</string>
+    <string name="size_large">גדול</string>
+    <string name="size_medium">בינוני</string>
+    <string name="size_small">קטן</string>
+    <string name="size_extra_small">קטן מאוד</string>
 </resources>

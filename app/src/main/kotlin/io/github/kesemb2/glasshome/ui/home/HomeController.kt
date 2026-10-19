@@ -52,7 +52,7 @@ class HomeController(private val app: GlassHomeApp, private val scope: Coroutine
         private set
 
     private val repository = WatchNextRepository(app)
-    private val resolver = HeroResolver(app, app.tmdb)
+    private val resolver = HeroResolver(app.tmdb)
     private val enriched = ConcurrentHashMap<String, HeroItem>()
     private var refreshJob: Job? = null
     private var debounceJob: Job? = null

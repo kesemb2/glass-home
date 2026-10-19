@@ -71,10 +71,6 @@ data class GlassShade(
     val alphaY: Float,
     val uniform: Float = 0f,
 ) {
-    /** The ramps faded out by [amount] (0..1) while an even darkening of [dim] fades in. */
-    fun fadeTo(amount: Float, dim: Float): GlassShade =
-        copy(alphaX = alphaX * (1f - amount), alphaY = alphaY * (1f - amount), uniform = dim * amount)
-
     /** The same ramps as brushes, in the coordinates of a surface whose origin is at ([dx], [dy]). */
     fun brushes(dx: Float = 0f, dy: Float = 0f): List<Brush> = listOfNotNull(
         Brush.horizontalGradient(
@@ -137,6 +133,13 @@ class GlassBackdrop {
 val LocalGlassBackdrop = staticCompositionLocalOf<GlassBackdrop?> { null }
 
 /**
+ * For glass inside a page that scrolls over a fixed backdrop: the page's current scroll offset (px, the same
+ * rounded value its layout uses). Such glass samples the backdrop as if the page were at rest, so scrolling does
+ * not render it again on every frame; the page only ever rests at positions where that is exact or off screen.
+ */
+val LocalGlassScroll = staticCompositionLocalOf<(() -> Float)?> { null }
+
+/**
  * The liquid-glass lens shader (AGSL, Android 13+; source in res/raw/glass_lens.agsl). Compiled once; if that
  * fails, or on older Android, or when [enabled] is off, surfaces fall back to the layered look.
  */
@@ -189,9 +192,10 @@ object LiquidGlass {
  */
 fun Modifier.glass(shape: Shape, focus: () -> Float = { 0f }, rim: Boolean = true): Modifier = composed {
     val backdrop = LocalGlassBackdrop.current
+    val scroll = LocalGlassScroll.current
     val lens = LiquidGlass.source(LocalContext.current)
     val sampler = remember { BackdropSampler() }
-    onGloballyPositioned { sampler.update(it) }
+    onGloballyPositioned { sampler.update(it, scroll?.invoke() ?: 0f) }
         .drawWithCache {
             val outline = shape.createOutline(size, layoutDirection, this)
             val rtl = layoutDirection == LayoutDirection.Rtl
@@ -286,10 +290,10 @@ private class BackdropSampler {
 
     class Placement(val origin: Offset, val root: Size)
 
-    fun update(coordinates: LayoutCoordinates) {
+    fun update(coordinates: LayoutCoordinates, scroll: Float) {
         if (!coordinates.isAttached) return
         val rootSize = coordinates.findRootCoordinates().size
-        origin = coordinates.positionInRoot()
+        origin = coordinates.positionInRoot() + Offset(0f, scroll)
         root = Size(rootSize.width.toFloat(), rootSize.height.toFloat())
     }
 

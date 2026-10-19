@@ -22,6 +22,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,7 +51,8 @@ import io.github.kesemb2.glasshome.data.apps.HomeView
 import io.github.kesemb2.glasshome.data.hero.HeroItem
 import io.github.kesemb2.glasshome.ui.apps.CardFace
 import io.github.kesemb2.glasshome.ui.apps.CardGrid
-import io.github.kesemb2.glasshome.ui.apps.CardMetrics
+import io.github.kesemb2.glasshome.ui.apps.CardSize
+import io.github.kesemb2.glasshome.ui.apps.LocalCardSize
 import io.github.kesemb2.glasshome.ui.apps.FavoritesShelf
 import io.github.kesemb2.glasshome.ui.apps.GridCard
 import io.github.kesemb2.glasshome.ui.apps.ShelfMetrics
@@ -59,7 +61,10 @@ import io.github.kesemb2.glasshome.ui.components.ClockPill
 import io.github.kesemb2.glasshome.ui.components.GlassIconButton
 import io.github.kesemb2.glasshome.ui.debug.PerfOverlay
 import io.github.kesemb2.glasshome.ui.glass.GlassBackdrop
+import io.github.kesemb2.glasshome.ui.glass.GlassShade
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassBackdrop
+import io.github.kesemb2.glasshome.ui.glass.LocalGlassScroll
+import io.github.kesemb2.glasshome.ui.hero.GRID_DIM
 import io.github.kesemb2.glasshome.ui.hero.HeroScreen
 import io.github.kesemb2.glasshome.ui.home.HomeNav.Companion.FOLDER_PREFIX
 import io.github.kesemb2.glasshome.ui.home.HomeNav.Companion.GRID_PREFIX
@@ -83,6 +88,9 @@ private val GRID_GAP = 80.dp
 private val GRID_VIEW_TOP = 96.dp
 private val FOLDER_GRID_TOP = 116.dp
 
+/** Between the hero text and the favorites shelf. */
+private val HERO_SHELF_GAP = 24.dp
+
 /**
  * The home screen: the Continue Watching hero with the favorites shelf at its bottom, the app grid below it,
  * and the glass overlays (menus, folders, settings). Focus decides where the camera looks: on the hero and the
@@ -102,6 +110,7 @@ fun HomeScreen(
     lastKeyAt: () -> Long,
     onPlay: (HeroItem) -> Unit,
     onRequestAccess: () -> Unit,
+    onLanguage: (String) -> Unit,
 ) {
     Box(
         Modifier
@@ -112,7 +121,7 @@ fun HomeScreen(
             DisposableEffect(Unit) { onDispose { nav.closeAll() } }
             val backdrop = remember { GlassBackdrop() }
             CompositionLocalProvider(LocalGlassBackdrop provides backdrop) {
-                HomeContent(controller, apps, nav, resumed, lastKeyAt, onPlay, onRequestAccess)
+                HomeContent(controller, apps, nav, resumed, lastKeyAt, onPlay, onRequestAccess, onLanguage)
             }
         }
     }
@@ -127,8 +136,10 @@ private fun HomeContent(
     lastKeyAt: () -> Long,
     onPlay: (HeroItem) -> Unit,
     onRequestAccess: () -> Unit,
+    onLanguage: (String) -> Unit,
 ) {
     val settings = apps.settings
+    val cardSize = CardSize(settings.appColumns)
     val hero = controller.hero
     val view = remember(apps.layout, apps.apps, settings.showPhoneApps) { apps.view() }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
@@ -195,22 +206,33 @@ private fun HomeContent(
         Modifier
             .fillMaxSize()
             .onFocusChanged { hasFocus = it.hasFocus }
-            .onPreviewKeyEvent { event -> moving != null && handleMoveKey(event, moving, rtl, apps, nav) },
+            .onPreviewKeyEvent { event -> moving != null && handleMoveKey(event, moving, rtl, cardSize.columns, apps, nav) },
     ) {
         val screenHeight = maxHeight
+        val shelfHeight = ShelfMetrics.height(cardSize)
         val gridTop = screenHeight + GRID_GAP
-        val rows = gridRows(view.grid.size)
+        val rows = gridRows(view.grid.size, cardSize.columns)
         val gridIndex = view.grid.indexOfFirst { it.key == nav.gridKey }.coerceAtLeast(0)
-        val row = gridIndex / CardMetrics.COLUMNS
+        val row = gridIndex / cardSize.columns
         val lastTarget = remember { FloatArray(1) }
         val target = when (nav.area) {
             Area.Hero, Area.Shelf -> 0f
-            Area.Grid -> with(density) { cameraFor(row, rows, gridTop - GRID_VIEW_TOP).toPx() }
+            Area.Grid -> with(density) { cameraFor(row, rows, gridTop - GRID_VIEW_TOP, cardSize.rowPitch).toPx() }
             Area.Top -> lastTarget[0]
         }
         lastTarget[0] = target
-        val camera by animateFloatAsState(target, Springs.camera(), label = "camera")
+        val cameraState = animateFloatAsState(target, Springs.camera(), label = "camera")
+        val camera by cameraState
         val gridAmount by animateFloatAsState(if (target > 0f) 1f else 0f, Springs.content(), label = "grid")
+        // Glass on the page samples the backdrop as if the page were at rest (see LocalGlassScroll).
+        val glassScroll: () -> Float = remember(cameraState) { { cameraState.value.roundToInt().toFloat() } }
+        // Glass in the grid refracts the grid's own blurred, darkened backdrop.
+        val gridGlass = remember {
+            GlassBackdrop().apply { shade = { GlassShade(0f, 1f, 0f, 0f, 1f, 0f, uniform = GRID_DIM) } }
+        }
+        // While an overlay fully covers the screen, nothing under it is drawn.
+        var coverCount by remember { mutableIntStateOf(0) }
+        val onCovering: (Boolean) -> Unit = remember { { covering -> if (covering) coverCount++ else coverCount-- } }
 
         // Remembered, so focus moving elsewhere does not recompose the hero.
         val heroFocus = remember(nav, view) {
@@ -227,19 +249,30 @@ private fun HomeContent(
                 }
         }
 
+        CompositionLocalProvider(LocalCardSize provides cardSize) {
         CompositionLocalProvider(LocalFocusAllowed provides !overlaysOpen) {
-            HeroScreen(
-                state = hero,
-                autoAdvance = resumed && settings.heroAutoAdvance && !overlaysOpen,
-                lastKeyAt = lastKeyAt,
-                camera = { camera },
-                grid = { gridAmount },
-                inGrid = target > 0f,
-                focusModifier = heroFocus,
-                onPlay = onPlay,
-                onDismiss = controller::dismiss,
-                onRequestAccess = onRequestAccess,
-            )
+          Box(
+              Modifier
+                  .fillMaxSize()
+                  .graphicsLayer { alpha = if (coverCount > 0) 0f else 1f },
+          ) {
+            CompositionLocalProvider(LocalGlassScroll provides glassScroll) {
+                HeroScreen(
+                    state = hero,
+                    autoAdvance = resumed && settings.heroAutoAdvance && !overlaysOpen,
+                    lastKeyAt = lastKeyAt,
+                    camera = { camera },
+                    grid = { gridAmount },
+                    contentBottom = Spacing.ScreenVertical + shelfHeight + HERO_SHELF_GAP,
+                    logoScale = settings.logoPercent / 100f,
+                    textScale = settings.textPercent / 100f,
+                    gridGlass = gridGlass,
+                    focusModifier = heroFocus,
+                    onPlay = onPlay,
+                    onDismiss = controller::dismiss,
+                    onRequestAccess = onRequestAccess,
+                )
+            }
 
             // The page that scrolls: the favorites shelf at the bottom of the hero, the app grid below it.
             Box(
@@ -247,6 +280,7 @@ private fun HomeContent(
                     .fillMaxSize()
                     .offset { IntOffset(0, -camera.roundToInt()) },
             ) {
+              CompositionLocalProvider(LocalGlassScroll provides glassScroll) {
                 FavoritesShelf(
                     apps = view.favorites,
                     visuals = apps.visuals,
@@ -267,13 +301,14 @@ private fun HomeContent(
                     },
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = screenHeight - Spacing.ScreenVertical - ShelfMetrics.Height)
+                        .padding(top = screenHeight - Spacing.ScreenVertical - shelfHeight)
                         .onPreviewKeyEvent { event ->
                             event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp &&
                                 (focusHero() || nav.focus(SETTINGS))
                         },
                 )
 
+                CompositionLocalProvider(LocalGlassBackdrop provides gridGlass) {
                 CardGrid(
                     items = view.grid,
                     modifier = Modifier
@@ -311,6 +346,8 @@ private fun HomeContent(
                         },
                     )
                 }
+                }
+              }
             }
 
             // Fixed at the top: settings and the clock.
@@ -342,15 +379,23 @@ private fun HomeContent(
                         .padding(top = Spacing.ScreenVertical + 6.dp),
                 )
             }
+          }
         }
 
         nav.overlays.forEachIndexed { i, overlay ->
             key(overlay.id) {
                 val top = i == nav.overlays.lastIndex
                 when (overlay) {
-                    is Overlay.Menu -> MenuLayer(overlay, top, view, apps, nav)
-                    is Overlay.Folder -> FolderLayer(overlay, top, view, apps, nav)
-                    is Overlay.Settings -> SettingsSheet(overlay.page, top, apps) { page -> nav.replaceTop(overlay.copy(page = page)) }
+                    is Overlay.Menu -> MenuLayer(overlay, top, view, apps, nav, onCovering)
+                    is Overlay.Folder -> FolderLayer(overlay, top, view, apps, nav, onCovering)
+                    is Overlay.Settings -> SettingsSheet(
+                        page = overlay.page,
+                        top = top,
+                        apps = apps,
+                        onPage = { page -> nav.replaceTop(overlay.copy(page = page)) },
+                        onLanguage = onLanguage,
+                        onCovering = onCovering,
+                    )
                 }
             }
         }
@@ -362,18 +407,19 @@ private fun HomeContent(
                     .padding(start = Spacing.ScreenHorizontal, top = Spacing.ScreenVertical),
             )
         }
+        }
     }
 }
 
 /** Camera position (page offset) for focus in grid [row]: the first two rows stay put, then it follows a row at a time. */
-private fun cameraFor(row: Int, rows: Int, base: Dp): Dp {
+private fun cameraFor(row: Int, rows: Int, base: Dp, pitch: Dp): Dp {
     val lastStart = max(0, rows - 3)
-    return base + CardMetrics.RowPitch * min(max(0, row - 1), lastStart)
+    return base + pitch * min(max(0, row - 1), lastStart)
 }
 
 /** D-pad moves the card, OK or Back ends move mode. Every key is consumed while moving. */
-private fun handleMoveKey(event: KeyEvent, moving: Moving, rtl: Boolean, apps: AppsController, nav: HomeNav): Boolean {
-    val columns = if (moving.area == MoveArea.Favorites) 0 else CardMetrics.COLUMNS
+private fun handleMoveKey(event: KeyEvent, moving: Moving, rtl: Boolean, gridColumns: Int, apps: AppsController, nav: HomeNav): Boolean {
+    val columns = if (moving.area == MoveArea.Favorites) 0 else gridColumns
     val forward = if (rtl) Key.DirectionLeft else Key.DirectionRight
     val backward = if (rtl) Key.DirectionRight else Key.DirectionLeft
     val delta = when (event.key) {
@@ -404,7 +450,14 @@ private fun MoveHint(modifier: Modifier) {
 }
 
 @Composable
-private fun MenuLayer(overlay: Overlay.Menu, top: Boolean, view: HomeView, apps: AppsController, nav: HomeNav) {
+private fun MenuLayer(
+    overlay: Overlay.Menu,
+    top: Boolean,
+    view: HomeView,
+    apps: AppsController,
+    nav: HomeNav,
+    onCovering: (Boolean) -> Unit,
+) {
     val context = LocalContext.current
     val item: GridItem = when (val t = overlay.target) {
         is MenuTarget.GridApp -> GridItem.App(t.app)
@@ -412,7 +465,7 @@ private fun MenuLayer(overlay: Overlay.Menu, top: Boolean, view: HomeView, apps:
         is MenuTarget.FolderApp -> GridItem.App(t.app)
         is MenuTarget.GridFolder -> t.folder
     }
-    OverlayLayer(top = top, dim = 0.25f) { appear ->
+    OverlayLayer(top = top, dim = 0.25f, onCovering = onCovering) { appear ->
         val content = menuContent(context, overlay, view, apps, nav)
         AnchoredMenu(
             anchor = overlay.anchor,
@@ -426,12 +479,20 @@ private fun MenuLayer(overlay: Overlay.Menu, top: Boolean, view: HomeView, apps:
 
 /** An open folder: its name and its apps over the blurred home screen; scrolls by rows like the main grid. */
 @Composable
-private fun FolderLayer(overlay: Overlay.Folder, top: Boolean, view: HomeView, apps: AppsController, nav: HomeNav) {
+private fun FolderLayer(
+    overlay: Overlay.Folder,
+    top: Boolean,
+    view: HomeView,
+    apps: AppsController,
+    nav: HomeNav,
+    onCovering: (Boolean) -> Unit,
+) {
     val type = LocalGlassType.current
     val density = LocalDensity.current
     val folder = view.grid.filterIsInstance<GridItem.Folder>().firstOrNull { it.folder.id == overlay.folderId } ?: return
     val moving = nav.moving
-    OverlayLayer(top = top, dim = 0.3f) { appear ->
+    val cardSize = LocalCardSize.current
+    OverlayLayer(top = top, dim = 0.3f, onCovering = onCovering) { appear ->
         LaunchedEffect(Unit) {
             withFrameNanos { }
             val first = folder.apps.firstOrNull() ?: return@LaunchedEffect
@@ -439,7 +500,9 @@ private fun FolderLayer(overlay: Overlay.Folder, top: Boolean, view: HomeView, a
             nav.focus(FOLDER_PREFIX + first.packageName)
         }
         val index = folder.apps.indexOfFirst { it.packageName == nav.folderPkg }.coerceAtLeast(0)
-        val target = with(density) { cameraFor(index / CardMetrics.COLUMNS, gridRows(folder.apps.size), 0.dp).toPx() }
+        val target = with(density) {
+            cameraFor(index / cardSize.columns, gridRows(folder.apps.size, cardSize.columns), 0.dp, cardSize.rowPitch).toPx()
+        }
         val camera by animateFloatAsState(target, Springs.camera(), label = "folderCamera")
         Column(
             Modifier

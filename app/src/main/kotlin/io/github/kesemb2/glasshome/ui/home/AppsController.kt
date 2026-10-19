@@ -10,7 +10,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import io.github.kesemb2.glasshome.GlassHomeApp
-import io.github.kesemb2.glasshome.R
 import io.github.kesemb2.glasshome.data.apps.AppEntry
 import io.github.kesemb2.glasshome.data.apps.AppRepository
 import io.github.kesemb2.glasshome.data.apps.GridItem
@@ -18,12 +17,14 @@ import io.github.kesemb2.glasshome.data.apps.HomeLayout
 import io.github.kesemb2.glasshome.data.apps.HomeView
 import io.github.kesemb2.glasshome.data.settings.AppSettings
 import io.github.kesemb2.glasshome.image.AppVisuals
+import io.github.kesemb2.glasshome.ui.apps.CardSize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 /** Where an app or folder is being moved. */
 sealed interface MoveArea {
@@ -115,7 +116,9 @@ class AppsController(
             order.addAll(view.favorites)
             view.grid.forEach { if (it is GridItem.App) order.add(it.app) }
             view.grid.forEach { if (it is GridItem.Folder) order.addAll(it.apps) }
-            visuals.load(order.toList())
+            val density = app.resources.displayMetrics.density
+            val size = CardSize(settings.appColumns)
+            visuals.load(order.toList(), (size.width.value * density).roundToInt(), (size.height.value * density).roundToInt())
         }
     }
 
@@ -132,9 +135,9 @@ class AppsController(
         loadVisuals()
     }
 
-    /** Creates a folder holding [pkg] and returns its id. */
-    fun newFolder(pkg: String): String {
-        val (next, id) = layout.newFolder(pkg, app.getString(R.string.folder_default_name, layout.nextFolder))
+    /** Creates a folder holding [pkg] and returns its id. [name] gets the folder's number. */
+    fun newFolder(pkg: String, name: (number: Int) -> String): String {
+        val (next, id) = layout.newFolder(pkg, name(layout.nextFolder))
         update(next)
         return id
     }
@@ -147,6 +150,12 @@ class AppsController(
 
     fun setShowPhoneApps(show: Boolean) {
         settings.showPhoneApps = show
+        loadVisuals()
+    }
+
+    /** Cards are rendered at the size they are shown at, so a new size renders them again. */
+    fun setAppColumns(columns: Int) {
+        settings.appColumns = columns
         loadVisuals()
     }
 

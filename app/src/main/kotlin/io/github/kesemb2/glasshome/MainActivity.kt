@@ -2,6 +2,7 @@ package io.github.kesemb2.glasshome
 
 import android.content.ActivityNotFoundException
 import android.content.ComponentCallbacks2
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -15,6 +16,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import io.github.kesemb2.glasshome.data.settings.AppLanguage
 import io.github.kesemb2.glasshome.data.settings.AppSettings
 import io.github.kesemb2.glasshome.data.watchnext.WatchNextAccess
 import io.github.kesemb2.glasshome.ui.home.AppsController
@@ -42,6 +44,11 @@ class MainActivity : ComponentActivity() {
     private val permissionRequest =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { controller.refresh() }
 
+    /** The app's own language (Settings › Language) applies to everything this activity shows. */
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(AppLanguage.wrap(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as GlassHomeApp
@@ -59,6 +66,10 @@ class MainActivity : ComponentActivity() {
                     lastKeyAt = { lastKeyAt.longValue },
                     onPlay = { controller.play(this, it) },
                     onRequestAccess = { requestWatchNextAccess(fromButton = true) },
+                    onLanguage = { language ->
+                        AppLanguage.set(this, language)
+                        recreate()
+                    },
                 )
             }
         }
