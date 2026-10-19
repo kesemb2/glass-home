@@ -70,12 +70,14 @@ content titles) renders in it while digits and Latin stay in Inter.
   colour. The colour is the most common 4-bit colour bin, colourful pixels weighted above greys (so a brand colour
   beats a white background), scaled to an HSV value of 0.22–0.52 so white text reads on it. It is computed once per
   app version and cached on disk, so a card shows its colour at once while its image loads.
-- Card images are rendered once at the size they are shown at (banners 320 × 180 px, icons 96 px) and moved to GPU
-  memory (hardware bitmaps); they are dropped when the home screen is hidden. Edges are anti-aliased by filling the
-  card shape with an image shader rather than clipping.
+- Card images are rendered once at the focused card's size (card × 1.12, so the card in focus is drawn 1:1; icons
+  96 px) and moved to GPU memory (hardware bitmaps). Rendered cards are also saved as PNGs per app version and size,
+  so after a restart they decode straight into GPU memory instead of being drawn again from each app's resources.
+  Edges are anti-aliased by filling the card shape with a filtered image shader rather than clipping.
 - Card glass (every app card, after tvOS): a sheen falling from the top-left (white 10% → 3% → 0 over the top
-  ~60%, 16% on the focused card), composed into the card's own image shader (or baked into the fallback's fill
-  gradient), so it costs no extra pass; and a 1 dp rim lit at the top-left corner (white 55%) with a fainter
+  ~60%, 16% on the focused card), composed into the card's own image shader on Android 13+ (the image inside is
+  set to filter; unfiltered, the scaled-up focused card looked pixelated) or baked into the fallback's fill
+  gradient, so it costs no extra pass; and a 1 dp rim lit at the top-left corner (white 55%) with a fainter
   reflection at the bottom-right (24%), at 65% strength until focused.
 
 ## Liquid glass (cheap on Mali-G31)
@@ -180,6 +182,7 @@ Springs everywhere; never linear tweens.
 | `overlay` | 0.8 | 500 | Menus and folders scaling in from their anchor |
 | `color` | 1.0 | 500 | Focus fills (critically damped so colours never overshoot) |
 | `exit` | 1.0 | 1500 | Outgoing hero text |
+| `hurry` | 1.0 | 900 | Finishing a hero change early because the next one is waiting |
 | `camera` | 1.0 | 300 | The home screen scrolling between hero and grid (never bounces) |
 | `sweep` | 1.0 | 40 | The one-shot specular highlight |
 
@@ -190,8 +193,15 @@ Springs everywhere; never linear tweens.
   element's menu, and that key's release is swallowed.
 - **Hero change** (Left/Right on Play): backdrop cross-fades with a 24 dp parallax slide in the direction of
   travel (images are drawn 24 dp wider than the screen on each side, so the slide never uncovers an edge; the
-  item's soft glass source shows first and the sharp image fades in over it); source label, logo, metadata, synopsis and progress fade/slide in with a 40 ms stagger while the old
-  text fades out fast. Page dots sit in a glass pill. Play is outside the animated block, so it keeps focus.
+  item's soft glass source shows first and the sharp image fades in over it); logo, metadata, synopsis and
+  progress fade/slide in with a 40 ms stagger while the old text fades out fast, both pinned to the start edge
+  (`AnimatedContent` aligns as if left to right, so the alignment is absolute: right in Hebrew). Page dots sit in a
+  glass pill. Play is outside the animated block, so it keeps focus.
+- **Fast changes**: backdrop changes run one at a time. A key press during a change makes it finish quickly
+  (`hurry`), and only the newest item waiting is shown next, so the stage never stacks more than the old image and
+  the new one (each a full-screen pass) and the glass over it follows a clean cross-fade. The small images (soft
+  backdrop, the grid's, logo) of two items either way are prefetched at once; the neighbours' sharp backdrops only
+  after the selection rests for 300 ms, and cancelled when it moves on.
 - **Auto-advance**: every 8 s, only while the hero is visible and focused; pauses for 20 s after any key press and
   stops after 5 minutes without one (the TV left on), until the next key.
 - **Leaving the hero**: its text fades out and the backdrop cross-fades to the blurred, darkened version that
@@ -217,12 +227,15 @@ Springs everywhere; never linear tweens.
 
 ## Images
 
-- Backdrops decoded at the window size (≤ 1920 px wide) as hardware bitmaps, retried once as software bitmaps if
+- Backdrops decoded at most 1280 px wide (TMDB's size; decoding larger only upscales in memory, 3.7 MB instead of
+  8.3 per image, and the GPU scales them while drawing) as hardware bitmaps, retried once as software bitmaps if
   that fails; logos fit in 600 × 600 px and are padded by 24 px.
-- Memory cache 32 MB, disk cache 96 MB; the memory cache is cleared when the home screen is hidden, and the whole
-  screen (its layers, glass and backdrop images) is disposed. App card images (~150 KB each, GPU memory) stay so
-  returning home is instant; they go when the system reports memory pressure (`TRIM_MEMORY_BACKGROUND`).
-- Small memory cache, capped disk cache; prefetch only the next and previous hero items.
+- Memory cache 32 MB, disk cache 96 MB. Requests have explicit memory-cache keys, so an image already in memory is
+  drawn in the first frame (no blank frame, no logo placeholder). When the home screen is hidden the whole screen
+  (its layers, glass and images) is disposed and the large images leave the memory cache; up to 12 MB of the small
+  ones (soft backdrops, logos) and the app card images (~200 KB each, GPU memory) stay, so returning home shows
+  everything at once (the first backdrop without a fade). `TRIM_MEMORY_BACKGROUND` arrives on every trip to the
+  background, so only `TRIM_MEMORY_COMPLETE` drops those too.
 - A mostly dark logo gets a subtle light glow so it stays readable.
 
 ## Home layout

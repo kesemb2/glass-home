@@ -9,10 +9,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import coil3.ImageLoader
+import coil3.memory.MemoryCache
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.request.allowHardware
@@ -44,8 +46,18 @@ object HeroImages {
 
     const val LOGO_MAX_PX = 600
 
+    /**
+     * The sharp backdrop is decoded at most this wide: TMDB's backdrops are 1280 px, so decoding them at the
+     * screen's 1920 only upscales them in memory (8 MB instead of 3.7 per image, and more to read on every frame);
+     * the GPU scales them up as it draws.
+     */
+    const val BACKDROP_MAX_WIDTH = 1280
+
     /** Transparent margin added around every logo, room for the glow on dark logos. */
     const val LOGO_PAD_PX = 24
+
+    // Requests carry explicit memory-cache keys, so the first frame can take an image straight from the memory
+    // cache (cachedImageBitmap) instead of drawing nothing until the load returns.
 
     fun backdrop(context: Context, url: String, widthPx: Int, heightPx: Int, hardware: Boolean = true): ImageRequest =
         ImageRequest.Builder(context)
@@ -53,6 +65,7 @@ object HeroImages {
             .size(widthPx, heightPx)
             .scale(Scale.FILL)
             .allowHardware(hardware)
+            .memoryCacheKey("backdrop:${widthPx}x$heightPx:$url")
             .build()
 
     /** The sharp backdrop; retries once as a software bitmap if the hardware decode fails on this device. */
@@ -71,6 +84,7 @@ object HeroImages {
             .scale(Scale.FILL)
             .allowHardware(false)
             .transformations(blur)
+            .memoryCacheKey("${blur.cacheKey}:$url")
             .build()
 
     fun logo(context: Context, url: String): ImageRequest =
@@ -80,6 +94,7 @@ object HeroImages {
             .scale(Scale.FIT)
             .allowHardware(false)
             .transformations(LogoTransformation)
+            .memoryCacheKey("${LogoTransformation.cacheKey}:$url")
             .build()
 
     private val GlassSource = BlurTransformation("glass-source-v3", BLUR_WIDTH, BLUR_HEIGHT, BLUR_RADIUS, BLUR_SATURATION)
@@ -145,6 +160,27 @@ object HeroImages {
 suspend fun ImageLoader.loadImageBitmap(request: ImageRequest): ImageBitmap? =
     (execute(request) as? SuccessResult)?.image?.toBitmap()?.asImageBitmap()
 
+/** The image for [request] if it is in the memory cache right now, without suspending. */
+fun ImageLoader.cachedImageBitmap(request: ImageRequest): ImageBitmap? {
+    val key = request.memoryCacheKey ?: return null
+    return memoryCache?.get(MemoryCache.Key(key))?.image?.toBitmap()?.asImageBitmap()
+}
+
+/**
+ * The launcher went to the background: drops the large images (sharp backdrops) from the memory cache and keeps
+ * a few MB of the small ones (blurred backdrops, logos), so coming back shows Continue Watching at once.
+ */
+fun ImageLoader.trimForBackground() {
+    val cache = memoryCache ?: return
+    for (key in cache.keys.toList()) {
+        if ((cache.get(key)?.image?.size ?: 0L) > WARM_IMAGE_MAX_BYTES) cache.remove(key)
+    }
+    cache.trimToSize(WARM_CACHE_BYTES)
+}
+
+private const val WARM_IMAGE_MAX_BYTES = 2L * 1024 * 1024
+private const val WARM_CACHE_BYTES = 12L * 1024 * 1024
+
 @Immutable
 sealed interface ImageState {
     data object Loading : ImageState
@@ -158,22 +194,36 @@ fun ImageState.bitmapFor(url: String?): ImageBitmap? = (this as? ImageState.Read
 /** Loads [url] with the request built by [request]; restarts when the url changes. */
 @Composable
 fun rememberImage(url: String?, request: (Context, String) -> ImageRequest): State<ImageState> =
-    rememberLoadedImage(url) { loader, context, u -> loader.loadImageBitmap(request(context, u)) }
+    rememberLoadedImage(url, cached = { loader, context, u -> loader.cachedImageBitmap(request(context, u)) }) { loader, context, u ->
+        loader.loadImageBitmap(request(context, u))
+    }
 
-/** Loads [url] with [load]; restarts when the url changes. */
+/**
+ * Loads [url] with [load]; restarts when the url changes. An image [cached] finds in the memory cache is there
+ * from the first frame, with no load at all.
+ */
 @Composable
 fun rememberLoadedImage(
     url: String?,
+    cached: (loader: ImageLoader, context: Context, url: String) -> ImageBitmap? = { _, _, _ -> null },
     load: suspend (loader: ImageLoader, context: Context, url: String) -> ImageBitmap?,
 ): State<ImageState> {
     val context = LocalContext.current
-    return produceState<ImageState>(initialValue = if (url == null) ImageState.Failed else ImageState.Loading, url) {
+    val loader = (context.applicationContext as GlassHomeApp).imageLoader
+    val initial: ImageState = remember {
+        if (url == null) ImageState.Failed else cached(loader, context, url)?.let { ImageState.Ready(it, url) } ?: ImageState.Loading
+    }
+    return produceState(initialValue = initial, url) {
         if (url == null) {
             value = ImageState.Failed
             return@produceState
         }
+        if ((value as? ImageState.Ready)?.url == url) return@produceState
+        cached(loader, context, url)?.let {
+            value = ImageState.Ready(it, url)
+            return@produceState
+        }
         value = ImageState.Loading
-        val loader = (context.applicationContext as GlassHomeApp).imageLoader
         value = load(loader, context, url)?.let { ImageState.Ready(it, url) } ?: ImageState.Failed
     }
 }

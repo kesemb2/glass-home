@@ -34,13 +34,18 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -89,6 +94,7 @@ import io.github.kesemb2.glasshome.image.HeroImages
 import io.github.kesemb2.glasshome.image.ImageState
 import io.github.kesemb2.glasshome.image.ScrimTone
 import io.github.kesemb2.glasshome.image.bitmapFor
+import io.github.kesemb2.glasshome.image.cachedImageBitmap
 import io.github.kesemb2.glasshome.image.rememberImage
 import io.github.kesemb2.glasshome.image.rememberLoadedImage
 import io.github.kesemb2.glasshome.ui.components.GlassButton
@@ -105,9 +111,13 @@ import io.github.kesemb2.glasshome.ui.theme.LocalGlassType
 import io.github.kesemb2.glasshome.ui.theme.Shapes
 import io.github.kesemb2.glasshome.ui.theme.Spacing
 import io.github.kesemb2.glasshome.ui.theme.Springs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
@@ -120,6 +130,12 @@ private const val PAUSE_AFTER_KEY_MS = 20_000L
 /** With no key pressed for this long (the TV left on), auto-advance stops until the next key press. */
 private const val IDLE_STOP_MS = 5 * 60_000L
 private const val STAGGER_MS = 40L
+
+/** The selection rests this long before the neighbours' sharp backdrops are prefetched. */
+private const val PREFETCH_REST_MS = 300L
+
+/** An image that arrives this soon after the hero appears is shown without fading in. */
+private const val INSTANT_MS = 300L
 private val PARALLAX = 24.dp
 
 private val LOGO_MAX_WIDTH = 380.dp
@@ -170,7 +186,7 @@ fun HeroScreen(
     val items = state.items
     val context = LocalContext.current
     val metrics = context.resources.displayMetrics
-    val widthPx = min(metrics.widthPixels, 1920)
+    val widthPx = min(metrics.widthPixels, HeroImages.BACKDROP_MAX_WIDTH)
     val heightPx = (widthPx * metrics.heightPixels / metrics.widthPixels.toFloat()).roundToInt()
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
 
@@ -188,13 +204,14 @@ fun HeroScreen(
     }
 
     // The current item's backdrop: the soft glass source (instant, also what glass surfaces refract) and the
-    // sharp image decoded at screen size.
+    // sharp image.
     val glass = LocalGlassBackdrop.current
     val backdropUrl = item?.backdropUrl
     val soft by rememberImage(backdropUrl) { ctx, url -> HeroImages.blurred(ctx, url) }
-    val sharp by rememberLoadedImage(backdropUrl) { loader, ctx, url ->
-        HeroImages.loadBackdrop(loader, ctx, url, widthPx, heightPx)
-    }
+    val sharp by rememberLoadedImage(
+        backdropUrl,
+        cached = { loader, ctx, url -> loader.cachedImageBitmap(HeroImages.backdrop(ctx, url, widthPx, heightPx)) },
+    ) { loader, ctx, url -> HeroImages.loadBackdrop(loader, ctx, url, widthPx, heightPx) }
     val dim by rememberImage(backdropUrl) { ctx, url -> HeroImages.dimmed(ctx, url) }
     // Glass refracts what is behind it: the soft source over the hero, the grid's blur in the grid.
     LaunchedEffect(soft) {
@@ -212,17 +229,29 @@ fun HeroScreen(
         }
     }
 
-    // Prefetch only the neighbours.
+    // Prefetch: the small images (soft backdrop, the grid's, the logo) of two items either way at once, so fast key
+    // presses have something to show; the sharp backdrops of the direct neighbours once the selection rests for a
+    // moment, cancelled when it moves on (they are the expensive ones).
     LaunchedEffect(index, items) {
         if (items.size < 2) return@LaunchedEffect
         val loader = (context.applicationContext as GlassHomeApp).imageLoader
-        for (delta in intArrayOf(1, -1)) {
-            val neighbour = items[(index + delta).mod(items.size)]
+        fun around(vararg deltas: Int) =
+            deltas.map { items[(index + it).mod(items.size)] }.filter { it.key != items[index].key }.distinctBy { it.key }
+        for (neighbour in around(1, -1, 2, -2)) {
             neighbour.backdropUrl?.let {
-                loader.enqueue(HeroImages.backdrop(context, it, widthPx, heightPx))
                 loader.enqueue(HeroImages.blurred(context, it))
+                loader.enqueue(HeroImages.dimmed(context, it))
             }
             neighbour.logoUrl?.let { loader.enqueue(HeroImages.logo(context, it)) }
+        }
+        delay(PREFETCH_REST_MS)
+        val large = around(1, -1).mapNotNull { n ->
+            n.backdropUrl?.let { loader.enqueue(HeroImages.backdrop(context, it, widthPx, heightPx)) }
+        }
+        try {
+            awaitCancellation()
+        } finally {
+            large.forEach { it.dispose() }
         }
     }
 
@@ -278,7 +307,7 @@ fun HeroScreen(
                 drawLayer(backdropLayer)
             },
     ) {
-        HeroBackdrop(item?.key, sharp.bitmapFor(backdropUrl), soft.bitmapFor(backdropUrl), forward, rtl, overscanPx) {
+        HeroBackdrop(item?.key, backdropUrl, sharp.bitmapFor(backdropUrl), soft.bitmapFor(backdropUrl), forward, rtl, overscanPx) {
             grid() >= 1f
         }
         Scrims(rtl, scrim) { 1f - grid() }
@@ -305,7 +334,9 @@ fun HeroScreen(
                 AnimatedContent(
                     targetState = item,
                     transitionSpec = { (EnterTransition.None togetherWith fadeOut(Springs.exit())).using(null) },
-                    contentAlignment = Alignment.BottomStart,
+                    // AnimatedContent aligns its children as if the layout ran left to right, so in Hebrew the
+                    // incoming text sat on the left until the outgoing one left. Absolute alignment works both ways.
+                    contentAlignment = if (rtl) AbsoluteAlignment.BottomRight else AbsoluteAlignment.BottomLeft,
                     contentKey = { it.key },
                     label = "heroText",
                 ) { target -> HeroText(target, rtl, heroFocused, logoScale, textScale) }
@@ -358,22 +389,43 @@ fun HeroScreen(
     }
 }
 
-/** One image on the backdrop stage: an item's sharp backdrop, or its soft glass source as a placeholder. */
+/** One item on the backdrop stage: its soft image, shown first, and its sharp one fading in over it. */
 @Stable
-private class BackdropLayer(val key: String?, val image: ImageBitmap, startOffset: Float) {
-    val alpha = Animatable(0f)
-    val offset = Animatable(startOffset)
+private class BackdropLayer(val key: String?, val url: String?, soft: ImageBitmap?, sharp: ImageBitmap?, offset: Float) {
+    var soft by mutableStateOf(soft)
+    var sharp by mutableStateOf(sharp)
+    val sharpness = Animatable(if (sharp != null) 1f else 0f)
+    var alpha by mutableFloatStateOf(0f)
+    var offset by mutableFloatStateOf(offset)
+}
+
+/** What the stage should show: an item's images, as far as they have loaded. */
+private data class StageTarget(
+    val key: String?,
+    val url: String?,
+    val soft: ImageBitmap?,
+    val sharp: ImageBitmap?,
+    val forward: Boolean,
+) {
+    val ready: Boolean get() = soft != null || sharp != null
+
+    fun shownBy(layer: BackdropLayer?): Boolean = layer != null && layer.key == key && layer.url == url
 }
 
 /**
  * Full-screen backdrop stage. A new item slides in by [PARALLAX] in the direction of travel while cross-fading
- * over the old one; its soft image appears first and the sharp image fades in over it once decoded. Until the new
- * item has any image the previous one stays, so the screen never flashes black. Images are drawn [overscanPx]
- * wider than the screen on each side so the parallax slide never uncovers an edge.
+ * over the old one, which slides out; its soft image appears first and the sharp one fades in over it once
+ * decoded. Until the new item has any image the previous one stays, so the screen never flashes black. Images
+ * are drawn [overscanPx] wider than the screen on each side so the slide never uncovers an edge.
+ *
+ * Item changes run one at a time. When a newer item is waiting, the running change finishes quickly and only the
+ * newest waiting item is shown next, so fast key presses never stack half-faded images (each one a full-screen
+ * pass) and the stage keeps up smoothly.
  */
 @Composable
 private fun HeroBackdrop(
     key: String?,
+    url: String?,
     sharp: ImageBitmap?,
     soft: ImageBitmap?,
     forward: Boolean,
@@ -382,26 +434,76 @@ private fun HeroBackdrop(
     covered: () -> Boolean,
 ) {
     val layers = remember { mutableStateListOf<BackdropLayer>() }
-    LaunchedEffect(key, sharp, soft) {
-        val image = sharp ?: soft ?: return@LaunchedEffect
-        val top = layers.lastOrNull()
-        if (top != null && top.image === image) return@LaunchedEffect
-        val newItem = top != null && top.key != key
-        val travel = (if (forward) 1f else -1f) * (if (rtl) -1f else 1f) * overscanPx
-        val below = layers.toList()
-        val layer = BackdropLayer(key, image, if (newItem) travel else 0f)
-        layers.add(layer)
-        coroutineScope {
-            launch { layer.alpha.animateTo(1f, Springs.content()) }
-            launch { layer.offset.animateTo(0f, Springs.content()) }
-            if (newItem) below.forEach { old -> launch { old.offset.animateTo(-travel, Springs.content()) } }
+    val target by rememberUpdatedState(StageTarget(key, url, soft, sharp, forward))
+    val direction by rememberUpdatedState(if (rtl) -1f else 1f)
+    val overscan by rememberUpdatedState(overscanPx)
+    val scope = rememberCoroutineScope()
+    val composedAt = remember { SystemClock.uptimeMillis() }
+
+    // The shown item's sharp image (or a soft one that came late) fills in on its own layer.
+    LaunchedEffect(Unit) {
+        snapshotFlow { target }.collect { t ->
+            val layer = layers.lastOrNull()?.takeIf { t.shownBy(it) } ?: return@collect
+            if (layer.soft == null) layer.soft = t.soft
+            if (layer.sharp == null && t.sharp != null) {
+                layer.sharp = t.sharp
+                scope.launch { layer.sharpness.animateTo(1f, Springs.content()) }
+            }
         }
-        layers.removeAll(below)
     }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            val t = snapshotFlow { target }.first { it.ready && !it.shownBy(layers.lastOrNull()) }
+            val top = layers.lastOrNull()
+            val layer = BackdropLayer(t.key, t.url, t.soft, t.sharp, 0f)
+            // The first image right as the screen appears (back from an app, from the memory cache): no fade in.
+            if (top == null && SystemClock.uptimeMillis() - composedAt < INSTANT_MS) {
+                layer.alpha = 1f
+                layers.add(layer)
+                continue
+            }
+            val newItem = top != null && top.key != t.key
+            val travel = if (newItem) (if (t.forward) 1f else -1f) * direction * overscan else 0f
+            val below = layers.toList()
+            val starts = FloatArray(below.size) { below[it].offset }
+            layer.offset = travel
+            layers.add(layer)
+            val progress = Animatable(0f)
+            val step: Animatable<Float, AnimationVector1D>.() -> Unit = {
+                layer.alpha = value
+                layer.offset = travel * (1f - value)
+                for (i in below.indices) below[i].offset = starts[i] + (-travel - starts[i]) * value
+            }
+            coroutineScope {
+                val hurry = launch {
+                    snapshotFlow { target }.first { it.ready && it.key != t.key }
+                    progress.animateTo(1f, Springs.hurry(), block = step)
+                }
+                try {
+                    progress.animateTo(1f, Springs.content(), block = step)
+                    hurry.cancel()
+                } catch (e: CancellationException) {
+                    ensureActive() // Cancelled ourselves: stop. Otherwise the hurry took over; let it finish.
+                    hurry.join()
+                }
+            }
+            layers.removeAll(below)
+        }
+    }
+
     Canvas(Modifier.fillMaxSize()) {
         // Behind the grid the blurred backdrop covers this completely; skip the full-screen draws.
         if (covered()) return@Canvas
-        layers.forEach { drawCover(it.image, it.alpha.value, it.offset.value, overscanPx) }
+        layers.forEach { layer ->
+            val alpha = layer.alpha.coerceIn(0f, 1f)
+            if (alpha <= 0f) return@forEach
+            val sharpImage = layer.sharp
+            val sharpness = if (sharpImage != null) layer.sharpness.value.coerceIn(0f, 1f) else 0f
+            val softImage = layer.soft
+            if (sharpness < 1f && softImage != null) drawCover(softImage, alpha, layer.offset, overscanPx)
+            if (sharpImage != null && sharpness > 0f) drawCover(sharpImage, alpha * sharpness, layer.offset, overscanPx)
+        }
     }
 }
 

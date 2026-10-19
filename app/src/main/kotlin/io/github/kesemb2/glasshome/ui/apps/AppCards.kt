@@ -1,5 +1,7 @@
 package io.github.kesemb2.glasshome.ui.apps
 
+import android.graphics.BitmapShader
+import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -272,14 +274,26 @@ private class Tile(val rect: Rect, val path: Path, val visual: AppVisual?, val p
 
 /**
  * Draws [image] filling the card shape (anti-aliased edges, unlike a clip), with the glass sheen composed into the
- * same draw.
+ * same draw (Android 13+, where the image inside the composed shader can be told to filter; without that it is
+ * sampled unfiltered and the scaled-up focused card looks pixelated, so older versions draw the sheen on top).
  */
 private fun Modifier.drawImageCard(image: ImageBitmap, focus: () -> Float): Modifier = drawWithCache {
     val path = Shapes.Card.createOutline(size, layoutDirection, this).asPath()
     val shader = imageShader(image, Rect(Offset.Zero, size))
-    val plain = ShaderBrush(CardGlass.sheenOver(shader, size, CardGlass.SHEEN))
-    val lit = ShaderBrush(CardGlass.sheenOver(shader, size, CardGlass.SHEEN_FOCUSED))
-    onDrawBehind { drawPath(path, if (focus() >= 0.5f) lit else plain) }
+    if (Build.VERSION.SDK_INT >= 33 && shader is BitmapShader) {
+        shader.filterMode = BitmapShader.FILTER_MODE_LINEAR
+        val plain = ShaderBrush(CardGlass.sheenOver(shader, size, CardGlass.SHEEN))
+        val lit = ShaderBrush(CardGlass.sheenOver(shader, size, CardGlass.SHEEN_FOCUSED))
+        onDrawBehind { drawPath(path, if (focus() >= 0.5f) lit else plain) }
+    } else {
+        val brush = ShaderBrush(shader)
+        val plain = CardGlass.sheen(size, CardGlass.SHEEN)
+        val lit = CardGlass.sheen(size, CardGlass.SHEEN_FOCUSED)
+        onDrawBehind {
+            drawPath(path, brush)
+            drawPath(path, if (focus() >= 0.5f) lit else plain)
+        }
+    }
 }
 
 /** The glass rim of [CardGlass], drawn over the card. */
@@ -311,17 +325,19 @@ private object CardGlass {
 
     private fun sheenEnd(size: Size) = Offset(size.width * 0.4f, size.height * 0.62f)
 
-    /** [image] with the sheen over it, in one shader. */
-    fun sheenOver(image: Shader, size: Size, alpha: Float): Shader = android.graphics.ComposeShader(
-        image,
-        LinearGradientShader(
-            from = sheenStart(size),
-            to = sheenEnd(size),
-            colors = listOf(Color.White.copy(alpha = alpha), Color.White.copy(alpha = alpha * 0.3f), Color.Transparent),
-            colorStops = listOf(0f, 0.45f, 1f),
-        ),
-        android.graphics.PorterDuff.Mode.SRC_OVER,
+    private fun sheenShader(size: Size, alpha: Float): Shader = LinearGradientShader(
+        from = sheenStart(size),
+        to = sheenEnd(size),
+        colors = listOf(Color.White.copy(alpha = alpha), Color.White.copy(alpha = alpha * 0.3f), Color.Transparent),
+        colorStops = listOf(0f, 0.45f, 1f),
     )
+
+    /** The sheen alone, drawn over a card. */
+    fun sheen(size: Size, alpha: Float): Brush = ShaderBrush(sheenShader(size, alpha))
+
+    /** [image] with the sheen over it, in one shader. */
+    fun sheenOver(image: Shader, size: Size, alpha: Float): Shader =
+        android.graphics.ComposeShader(image, sheenShader(size, alpha), android.graphics.PorterDuff.Mode.SRC_OVER)
 
     /** A solid [color] with the sheen over it, as one gradient. */
     fun sheenOver(color: Color, size: Size, alpha: Float): Brush = Brush.linearGradient(

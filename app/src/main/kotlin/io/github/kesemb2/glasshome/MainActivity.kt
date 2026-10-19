@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import io.github.kesemb2.glasshome.data.settings.AppLanguage
 import io.github.kesemb2.glasshome.data.settings.AppSettings
 import io.github.kesemb2.glasshome.data.watchnext.WatchNextAccess
+import io.github.kesemb2.glasshome.image.trimForBackground
 import io.github.kesemb2.glasshome.system.HomeSystem
 import io.github.kesemb2.glasshome.ui.home.AppsController
 import io.github.kesemb2.glasshome.ui.home.Area
@@ -182,13 +183,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        // The home screen is hidden: drop decoded images; they come back from the disk cache.
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
-            (application as GlassHomeApp).imageLoader.memoryCache?.clear()
+        val images = (application as GlassHomeApp).imageLoader
+        // The home screen is hidden: the large images go (they come back from the disk cache); the small ones and
+        // the app cards (~10 MB together) stay, so coming back home shows everything at once. TRIM_MEMORY_BACKGROUND
+        // arrives every time the launcher goes to the background, so it is no reason to drop them.
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) images.trimForBackground()
+        // Memory is really short: everything goes (the cards come back from their saved copies).
+        @Suppress("DEPRECATION") // Still delivered by some TVs.
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE) {
+            images.memoryCache?.clear()
+            apps.trimMemory()
         }
-        // Memory is short: the app cards go too.
-        @Suppress("DEPRECATION") // The level constants still arrive on Android 14.
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) apps.trimMemory()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

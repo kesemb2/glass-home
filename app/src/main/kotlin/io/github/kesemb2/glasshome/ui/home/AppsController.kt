@@ -18,6 +18,7 @@ import io.github.kesemb2.glasshome.data.apps.HomeView
 import io.github.kesemb2.glasshome.data.settings.AppSettings
 import io.github.kesemb2.glasshome.image.AppVisuals
 import io.github.kesemb2.glasshome.ui.apps.CardSize
+import io.github.kesemb2.glasshome.ui.motion.FocusStyle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -96,8 +97,9 @@ class AppsController(
     }
 
     /**
-     * The system needs memory: drop the card images too. They are small (about 150 KB per app, in GPU memory), so
-     * they are otherwise kept while the launcher is in the background, and returning home shows them at once.
+     * The system is short of memory: drop the card images too. They are small (about 200 KB per app, in GPU
+     * memory), so they are otherwise kept while the launcher is in the background, and returning home shows them at
+     * once; after a drop they come back quickly from their saved copies.
      */
     fun trimMemory() {
         visuals.clear()
@@ -123,9 +125,10 @@ class AppsController(
             order.addAll(view.favorites)
             view.grid.forEach { if (it is GridItem.App) order.add(it.app) }
             view.grid.forEach { if (it is GridItem.Folder) order.addAll(it.apps) }
-            val density = app.resources.displayMetrics.density
+            // Rendered at the focused card's size: the card in focus is the one looked at, and it stays sharp.
+            val scale = app.resources.displayMetrics.density * FocusStyle.Card.focusedScale
             val size = CardSize(settings.appColumns)
-            visuals.load(order.toList(), (size.width.value * density).roundToInt(), (size.height.value * density).roundToInt())
+            visuals.load(order.toList(), (size.width.value * scale).roundToInt(), (size.height.value * scale).roundToInt())
         }
     }
 

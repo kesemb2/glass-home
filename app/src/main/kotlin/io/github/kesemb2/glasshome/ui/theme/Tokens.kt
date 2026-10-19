@@ -61,6 +61,9 @@ object Springs {
     /** Menus and folders scaling in from their anchor. */
     fun <T> overlay(): SpringSpec<T> = spring(dampingRatio = 0.8f, stiffness = 500f)
 
+    /** Finishing a hero change quickly because the next one is waiting (fast key presses). */
+    fun <T> hurry(): SpringSpec<T> = spring(dampingRatio = 1f, stiffness = 900f)
+
     /** Quick, fully damped exits (outgoing hero text). */
     fun <T> exit(): SpringSpec<T> = spring(dampingRatio = 1f, stiffness = 1500f)
 

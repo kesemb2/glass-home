@@ -121,12 +121,22 @@ class GlassBackdrop {
         current = bitmap
     }
 
-    /** Cross-fades glass surfaces to [bitmap] (null shows tint only). */
+    /**
+     * Cross-fades glass surfaces to [bitmap] (null shows tint only). A new image during a cross-fade that has not
+     * got half way replaces the incoming one and the fade carries on, instead of starting over from a half-faded
+     * mix; the first image shows at once.
+     */
     suspend fun show(bitmap: ImageBitmap?) {
         if (bitmap == current) return
-        previous = current
+        if (current == null && previous == null) {
+            current = bitmap
+            return
+        }
+        if (previous == null || fade.value >= 0.5f) {
+            previous = current
+            fade.snapTo(0f)
+        }
         current = bitmap
-        fade.snapTo(0f)
         fade.animateTo(1f, Springs.content())
         previous = null
     }
