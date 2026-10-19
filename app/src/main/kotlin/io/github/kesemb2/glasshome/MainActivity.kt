@@ -24,6 +24,7 @@ import io.github.kesemb2.glasshome.system.HomeSystem
 import io.github.kesemb2.glasshome.ui.home.AppsController
 import io.github.kesemb2.glasshome.ui.home.Area
 import io.github.kesemb2.glasshome.ui.home.HomeSetup
+import io.github.kesemb2.glasshome.ui.home.SettingsPage
 import io.github.kesemb2.glasshome.ui.home.HomeController
 import io.github.kesemb2.glasshome.ui.home.HomeNav
 import io.github.kesemb2.glasshome.ui.home.HomeScreen
@@ -54,9 +55,15 @@ class MainActivity : ComponentActivity() {
 
     private val homeSetup = HomeSetup(
         requestDefaultHome = { requestDefaultHome() },
-        openHelperSettings = { HomeSystem.openAccessibilitySettings(this) },
+        openHelperSettings = {
+            nav.reopenSettings = SettingsPage.Home
+            HomeSystem.openAccessibilitySettings(this)
+        },
         openTvHome = { HomeSystem.openTvHome(this) },
-        openTvSettings = { HomeSystem.openTvSettings(this) },
+        openTvSettings = {
+            nav.reopenSettings = SettingsPage.Home
+            HomeSystem.openTvSettings(this)
+        },
     )
 
     /** The app's own language (Settings › Language) applies to everything this activity shows. */
@@ -115,6 +122,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun goHome() {
+        nav.reopenSettings = null
         nav.closeAll()
         nav.area = Area.Hero
         nav.focusKey = HomeNav.HERO
@@ -140,6 +148,7 @@ class MainActivity : ComponentActivity() {
                 // Fall through to the settings page.
             }
         }
+        nav.reopenSettings = SettingsPage.Home
         HomeSystem.openHomeSettings(this)
     }
 
@@ -166,6 +175,9 @@ class MainActivity : ComponentActivity() {
         if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
             (application as GlassHomeApp).imageLoader.memoryCache?.clear()
         }
+        // Memory is short: the app cards go too.
+        @Suppress("DEPRECATION") // The level constants still arrive on Android 14.
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) apps.trimMemory()
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

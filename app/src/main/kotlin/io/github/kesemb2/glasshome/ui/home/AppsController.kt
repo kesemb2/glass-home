@@ -93,6 +93,13 @@ class AppsController(
         debounceJob?.cancel()
         refreshJob?.cancel()
         visualsJob?.cancel()
+    }
+
+    /**
+     * The system needs memory: drop the card images too. They are small (about 150 KB per app, in GPU memory), so
+     * they are otherwise kept while the launcher is in the background, and returning home shows them at once.
+     */
+    fun trimMemory() {
         visuals.clear()
     }
 

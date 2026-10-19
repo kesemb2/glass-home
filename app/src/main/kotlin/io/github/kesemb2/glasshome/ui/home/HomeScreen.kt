@@ -166,6 +166,13 @@ private fun HomeContent(
 
     fun focusHero(): Boolean = nav.focus(HERO)
 
+    // Back from the TV's own settings (opened from Settings › Home and startup): show that page again.
+    LaunchedEffect(Unit) {
+        val page = nav.reopenSettings ?: return@LaunchedEffect
+        nav.reopenSettings = null
+        nav.open(Overlay.Settings(nav.newId(), SETTINGS, page))
+    }
+
     // Home while already here: back to the top (the activity has reset the navigation state).
     LaunchedEffect(homeSignal) {
         if (homeSignal == 0) return@LaunchedEffect

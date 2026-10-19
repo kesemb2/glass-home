@@ -27,8 +27,8 @@ https://github.com/kesemb2/glass-home/releases/latest/download/glass-home.apk
 | 0 | Repo, CI, signing, release publishing, diagnostics screen | done |
 | 1 | Design system + Continue Watching hero | done |
 | 2 | Favorites, app grid, folders, menus, settings, live glass | done |
-| 3 | Home button, start on boot, Hebrew/RTL pass | **in testing** |
-| 4 | Performance and polish against the budgets | planned |
+| 3 | Home button, start on boot, Hebrew/RTL pass | done |
+| 4 | Performance and polish against the budgets | **in testing** |
 
 Stage 0 measured the box: UI surface 1920 × 1080 px (960 × 540 dp at density 2), video mode 3840 × 2160 @ 59.94 Hz,
 33 MB PSS for the minimal screen.
@@ -82,11 +82,14 @@ home screen.
 
 | Budget | Target | Enforced |
 |---|---|---|
-| Release APK | < 6 MB | CI fails above 6 MB |
+| Release APK | < 6 MB | CI fails above 6 MB (stage 3 build: 2.4 MB) |
 | Native libraries | none | CI fails if the APK contains any `.so` |
-| Memory while visible | < ~150 MB PSS | measured on the TV (Settings → Performance overlay) |
-| Frame rate | 60 fps on Mali-G31 | measured on the TV |
-| Idle work | none (no polling, services or endless animations) | code review |
+| Memory while visible | < ~150 MB PSS | Settings → Performance overlay; measured 95–135 MB in stage 2 |
+| Frame rate | 60 fps on Mali-G31 | Settings → Performance overlay (fps, slow frames, p95) |
+| Idle work | none (no polling, services or endless animations) | code review: only timers are auto-advance (stops after 5 idle minutes), the overlay's own 1 s refresh, and the move-mode wiggle |
+
+The app's own code ships with a baseline profile (`app/src/main/baseline-prof.txt`), so it is compiled ahead of
+time on the TV instead of running in the JIT for the first launches.
 
 ## How builds work
 

@@ -27,7 +27,7 @@ class AppVisual(val banner: ImageBitmap?, val icon: ImageBitmap?, val color: Col
  * Card images for the launcher's apps, rendered once at the size they are shown at (banners at card size,
  * icons at 48 dp) and moved to GPU memory. Dominant colours are cached on disk per app version, so a card has
  * its colour immediately while its image loads. Everything but the colours is dropped by [clear] when the
- * home screen is hidden.
+ * system is short of memory.
  */
 @Stable
 class AppVisuals(private val context: Context) {

@@ -181,7 +181,8 @@ Springs everywhere; never linear tweens.
   travel (images are drawn 24 dp wider than the screen on each side, so the slide never uncovers an edge; the
   item's soft glass source shows first and the sharp image fades in over it); source label, logo, metadata, synopsis and progress fade/slide in with a 40 ms stagger while the old
   text fades out fast. Page dots sit in a glass pill. Play is outside the animated block, so it keeps focus.
-- **Auto-advance**: every 8 s, only while the hero is visible and focused; pauses for 20 s after any key press.
+- **Auto-advance**: every 8 s, only while the hero is visible and focused; pauses for 20 s after any key press and
+  stops after 5 minutes without one (the TV left on), until the next key.
 - **Leaving the hero**: its text fades out and the backdrop cross-fades to the blurred, darkened version that
   stays fixed behind the scrolling grid. Up from the first grid row returns to the shelf, Back to Play.
 - **Camera**: the page (hero text, shelf, grid) moves as one; the backdrop, clock and settings button stay fixed.
@@ -200,7 +201,9 @@ Springs everywhere; never linear tweens.
 
 - Backdrops decoded at the window size (≤ 1920 px wide) as hardware bitmaps, retried once as software bitmaps if
   that fails; logos fit in 600 × 600 px and are padded by 24 px.
-- Memory cache 32 MB, disk cache 96 MB; the memory cache is cleared when the home screen is hidden.
+- Memory cache 32 MB, disk cache 96 MB; the memory cache is cleared when the home screen is hidden, and the whole
+  screen (its layers, glass and backdrop images) is disposed. App card images (~150 KB each, GPU memory) stay so
+  returning home is instant; they go when the system reports memory pressure (`TRIM_MEMORY_BACKGROUND`).
 - Small memory cache, capped disk cache; prefetch only the next and previous hero items.
 - A mostly dark logo gets a subtle light glow so it stays readable.
 

@@ -111,6 +111,9 @@ import kotlin.math.roundToInt
 
 private const val AUTO_ADVANCE_MS = 8_000L
 private const val PAUSE_AFTER_KEY_MS = 20_000L
+
+/** With no key pressed for this long (the TV left on), auto-advance stops until the next key press. */
+private const val IDLE_STOP_MS = 5 * 60_000L
 private const val STAGGER_MS = 40L
 private val PARALLAX = 24.dp
 
@@ -217,6 +220,7 @@ fun HeroScreen(
     }
 
     // Auto-advance while visible and focused: 8 s after the item appeared and 20 s after the last key press.
+    val visibleSince = remember { SystemClock.uptimeMillis() }
     LaunchedEffect(autoAdvance, heroFocused, menuOpen, index, items.size) {
         if (!autoAdvance || !heroFocused || menuOpen || items.size < 2) return@LaunchedEffect
         val shownAt = SystemClock.uptimeMillis()
@@ -226,6 +230,7 @@ fun HeroScreen(
             if (now >= due) break
             delay(due - now)
         }
+        if (SystemClock.uptimeMillis() - max(lastKeyAt(), visibleSince) > IDLE_STOP_MS) return@LaunchedEffect
         step(+1)
     }
 

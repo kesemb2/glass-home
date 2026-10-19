@@ -1,0 +1,5 @@
+# Baseline profile: the app's own code is compiled ahead of time when it is installed (ProfileInstaller, part of
+# Compose), so the first launch, the first focus moves and the first menus run without waiting for the JIT.
+# The AndroidX libraries bring their own profiles; AGP merges them with this one.
+HSPLio/github/kesemb2/glasshome/**;->**(**)**
+Lio/github/kesemb2/glasshome/**;
