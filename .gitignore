@@ -1,0 +1,21 @@
+# Gradle / Android
+.gradle/
+build/
+/local.properties
+/captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# Signing material and secrets: never commit
+*.jks
+*.keystore
+*.p12
+signing*.txt
+
+# IDE / OS
+.idea/
+*.iml
+.kotlin/
+.DS_Store

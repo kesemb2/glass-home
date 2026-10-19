@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Glass Home</string>
+    <string name="stage_title">Install pipeline works</string>
+    <string name="stage_subtitle">Stage 0 build. The real home screen arrives in the next stages.</string>
+    <string name="section_display">Display</string>
+    <string name="section_device">Device</string>
+    <string name="section_build">Build</string>
+    <string name="label_ui_surface">UI surface</string>
+    <string name="label_display_mode">Display mode</string>
+    <string name="label_density">Density</string>
+    <string name="label_android">Android</string>
+    <string name="label_model">Model</string>
+    <string name="label_memory">Memory</string>
+    <string name="label_app_memory">App memory (PSS)</string>
+    <string name="label_version">Version</string>
+    <string name="label_tmdb">TMDB token</string>
+    <string name="tmdb_present">Configured</string>
+    <string name="tmdb_missing">Not configured yet</string>
+    <string name="button_refresh">Refresh</string>
+    <string name="button_app_info">App info</string>
+</resources>

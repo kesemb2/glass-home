@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="stage_title">מסלול ההתקנה עובד</string>
+    <string name="stage_subtitle">גרסת שלב 0. מסך הבית האמיתי יגיע בשלבים הבאים.</string>
+    <string name="section_display">מסך</string>
+    <string name="section_device">מכשיר</string>
+    <string name="section_build">גרסה</string>
+    <string name="label_ui_surface">משטח הממשק</string>
+    <string name="label_display_mode">מצב תצוגה</string>
+    <string name="label_density">צפיפות</string>
+    <string name="label_android">Android</string>
+    <string name="label_model">דגם</string>
+    <string name="label_memory">זיכרון</string>
+    <string name="label_app_memory">זיכרון האפליקציה (PSS)</string>
+    <string name="label_version">גרסה</string>
+    <string name="label_tmdb">טוקן TMDB</string>
+    <string name="tmdb_present">מוגדר</string>
+    <string name="tmdb_missing">עדיין לא מוגדר</string>
+    <string name="button_refresh">רענון</string>
+    <string name="button_app_info">פרטי האפליקציה</string>
+</resources>
