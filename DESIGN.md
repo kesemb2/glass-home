@@ -92,8 +92,19 @@ is adapted from [Liquid Glass Android](https://github.com/QWEA0/Liquid-Glass-And
 the plain source crop, the scrims, tint (10% / 18%), an inner top highlight (white 12% → 0 over 40%), a 1 dp rim
 bright at the top-start corner, and a faint reflection rim at the bottom-end corner.
 
-Both paths fill the shape's path, so edges stay anti-aliased on any shape. The shader runs only when a frame is
-drawn (focus and hero transitions); an idle screen draws nothing. Outer shadow: black 35%, via the focus lift or
+Both paths fill the shape's path, so edges stay anti-aliased on any shape.
+
+**Cost on the Mali-G31.** The first stage-2 build ran the lens for every glass surface on every frame, whatever
+changed on screen, which held the TV at 8–15 fps. Now:
+
+- each surface renders into a cached offscreen layer per backdrop image, re-rendered only when its image,
+  position, size, focus or the scrims change; any other redraw just composites that layer, and a cross-fade
+  between two images only changes the two layers' alpha;
+- the shader takes one sample on the flat interior (most of a large surface) and does the refraction, dispersion
+  and rim light only in the bevel band; the normal is analytic (one distance-field evaluation, not five), there is
+  no `pow`, and colour math is half precision. Output is the same as before (max difference 2/255).
+
+The shader runs only when a frame is drawn; an idle screen draws nothing. Outer shadow: black 35%, via the focus lift or
 `glassShadow` (6–24 dp).
 
 Over the app grid the backdrop is replaced by a far more blurred version (192 × 108 px, box-blur radius 3), and
@@ -166,7 +177,7 @@ The page, top to bottom (960 × 540 dp screen):
 - **Favorites shelf**: a glass tray (28 dp corners) 896 × 122 dp, 27 dp above the bottom, holding five 160 × 90 dp
   cards aligned with the grid columns. More than five scroll a card at a time; cards outside the window fade out
   rather than being clipped, so the focused card's lift is never cut. No labels (banners carry the name).
-- **App grid**: starts 60 dp below the hero; 5 columns of 160 × 90 dp cards, 16 dp apart, row pitch 130 dp; the
+- **App grid**: starts 80 dp below the hero (so no part of the shelf shows above the grid); 5 columns of 160 × 90 dp cards, 16 dp apart, row pitch 130 dp; the
   focused card's name appears 12 dp below it. On screen the first row sits 96 dp from the top.
 - **Fixed top bar**: round glass settings button (34 dp) and the clock pill at the top-end corner.
 
