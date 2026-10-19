@@ -110,8 +110,8 @@ Design tokens and motion rules: see [DESIGN.md](DESIGN.md).
 
 ## Credits
 
-- Fonts: [Inter](https://rsms.me/inter/) and [Heebo](https://fonts.google.com/specimen/Heebo), both under the SIL
-  Open Font License 1.1 (bundled as subsets).
+- Fonts: [Inter](https://rsms.me/inter/) and [Noto Sans Hebrew](https://fonts.google.com/noto/specimen/Noto+Sans+Hebrew),
+  both under the SIL Open Font License 1.1 (bundled as subsets).
 - Icons: [Material Symbols](https://fonts.google.com/icons), Apache License 2.0.
 - Metadata and artwork: this product uses the TMDB API but is not endorsed or certified by
   [TMDB](https://www.themoviedb.org/). The attribution notice and TMDB logo appear in Settings › About (stage 2).

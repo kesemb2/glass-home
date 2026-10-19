@@ -6,13 +6,9 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
-import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -31,6 +27,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,7 +70,9 @@ import io.github.kesemb2.glasshome.data.hero.HeroItem
 import io.github.kesemb2.glasshome.data.tmdb.MediaHint
 import io.github.kesemb2.glasshome.image.HeroImages
 import io.github.kesemb2.glasshome.image.ImageState
+import io.github.kesemb2.glasshome.image.bitmapFor
 import io.github.kesemb2.glasshome.image.rememberImage
+import io.github.kesemb2.glasshome.image.rememberLoadedImage
 import io.github.kesemb2.glasshome.ui.components.GlassButton
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassBackdrop
 import io.github.kesemb2.glasshome.ui.glass.glass
@@ -84,7 +84,9 @@ import io.github.kesemb2.glasshome.ui.theme.LocalGlassType
 import io.github.kesemb2.glasshome.ui.theme.Shapes
 import io.github.kesemb2.glasshome.ui.theme.Spacing
 import io.github.kesemb2.glasshome.ui.theme.Springs
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -134,11 +136,16 @@ fun HeroScreen(
         selectedKey = items[(index + delta).mod(items.size)].key
     }
 
-    // Glass surfaces sample the blurred version of whatever backdrop is showing.
+    // The current item's backdrop: the soft glass source (instant, also what glass surfaces refract) and the
+    // sharp image decoded at screen size.
     val glass = LocalGlassBackdrop.current
-    val blurred by rememberImage(item?.backdropUrl) { ctx, url -> HeroImages.blurred(ctx, url) }
-    LaunchedEffect(blurred) {
-        when (val b = blurred) {
+    val backdropUrl = item?.backdropUrl
+    val soft by rememberImage(backdropUrl) { ctx, url -> HeroImages.blurred(ctx, url) }
+    val sharp by rememberLoadedImage(backdropUrl) { loader, ctx, url ->
+        HeroImages.loadBackdrop(loader, ctx, url, widthPx, heightPx)
+    }
+    LaunchedEffect(soft) {
+        when (val b = soft) {
             is ImageState.Ready -> glass?.show(b.bitmap)
             ImageState.Failed -> glass?.show(null)
             ImageState.Loading -> Unit
@@ -172,10 +179,15 @@ fun HeroScreen(
         step(+1)
     }
 
-    // Glass surfaces get the same scrims as the screen behind them.
-    DisposableEffect(glass, rtl) {
+    // Glass surfaces get the same scrims and the same overscan zoom as the backdrop behind them.
+    val overscanPx = with(LocalDensity.current) { PARALLAX.toPx() }
+    DisposableEffect(glass, rtl, overscanPx) {
         glass?.shade = { root, origin -> HeroScrim.brushes(root.width, root.height, rtl, origin.x, origin.y) }
-        onDispose { glass?.shade = null }
+        glass?.zoom = 1f + 2f * overscanPx / metrics.widthPixels
+        onDispose {
+            glass?.shade = null
+            glass?.zoom = 1f
+        }
     }
 
     LaunchedEffect(menuOpen, item != null) {
@@ -184,7 +196,7 @@ fun HeroScreen(
     BackHandler(enabled = menuOpen) { menuOpen = false }
 
     Box(Modifier.fillMaxSize()) {
-        HeroBackdrop(item, forward, rtl, widthPx, heightPx)
+        HeroBackdrop(item?.key, sharp.bitmapFor(backdropUrl), soft.bitmapFor(backdropUrl), forward, rtl, overscanPx)
         Scrims(rtl)
 
         if (item != null) {
@@ -250,55 +262,60 @@ fun HeroScreen(
     }
 }
 
-@Composable
-private fun HeroBackdrop(item: HeroItem?, forward: Boolean, rtl: Boolean, widthPx: Int, heightPx: Int) {
-    val parallax = with(LocalDensity.current) { PARALLAX.roundToPx() }
-    AnimatedContent(
-        targetState = item,
-        modifier = Modifier.fillMaxSize(),
-        transitionSpec = {
-            val sign = (if (forward) 1 else -1) * (if (rtl) -1 else 1)
-            val offsetSpring = Springs.content(IntOffset.VisibilityThreshold)
-            (fadeIn(Springs.content()) + slideInHorizontally(offsetSpring) { sign * parallax }) togetherWith
-                (fadeOut(Springs.content()) + slideOutHorizontally(offsetSpring) { -sign * parallax })
-        },
-        contentKey = { it?.key },
-        label = "heroBackdrop",
-    ) { target -> BackdropImage(target?.backdropUrl, widthPx, heightPx) }
+/** One image on the backdrop stage: an item's sharp backdrop, or its soft glass source as a placeholder. */
+@Stable
+private class BackdropLayer(val key: String?, val image: ImageBitmap, startOffset: Float) {
+    val alpha = Animatable(0f)
+    val offset = Animatable(startOffset)
 }
 
-/** Full-screen, centre-cropped backdrop that cross-fades when its url changes (e.g. a TMDB backdrop arrives). */
+/**
+ * Full-screen backdrop stage. A new item slides in by [PARALLAX] in the direction of travel while cross-fading
+ * over the old one; its soft image appears first and the sharp image fades in over it once decoded. Until the new
+ * item has any image the previous one stays, so the screen never flashes black. Images are drawn [overscanPx]
+ * wider than the screen on each side so the parallax slide never uncovers an edge.
+ */
 @Composable
-private fun BackdropImage(url: String?, widthPx: Int, heightPx: Int) {
-    val image by rememberImage(url) { ctx, u -> HeroImages.backdrop(ctx, u, widthPx, heightPx) }
-    var shown by remember { mutableStateOf<ImageBitmap?>(null) }
-    var previous by remember { mutableStateOf<ImageBitmap?>(null) }
-    val fade = remember { Animatable(0f) }
-    LaunchedEffect(image) {
-        val ready = (image as? ImageState.Ready)?.bitmap ?: return@LaunchedEffect
-        if (ready == shown) return@LaunchedEffect
-        previous = shown
-        shown = ready
-        fade.snapTo(0f)
-        fade.animateTo(1f, Springs.content())
-        previous = null
+private fun HeroBackdrop(
+    key: String?,
+    sharp: ImageBitmap?,
+    soft: ImageBitmap?,
+    forward: Boolean,
+    rtl: Boolean,
+    overscanPx: Float,
+) {
+    val layers = remember { mutableStateListOf<BackdropLayer>() }
+    LaunchedEffect(key, sharp, soft) {
+        val image = sharp ?: soft ?: return@LaunchedEffect
+        val top = layers.lastOrNull()
+        if (top != null && top.image === image) return@LaunchedEffect
+        val newItem = top != null && top.key != key
+        val travel = (if (forward) 1f else -1f) * (if (rtl) -1f else 1f) * overscanPx
+        val below = layers.toList()
+        val layer = BackdropLayer(key, image, if (newItem) travel else 0f)
+        layers.add(layer)
+        coroutineScope {
+            launch { layer.alpha.animateTo(1f, Springs.content()) }
+            launch { layer.offset.animateTo(0f, Springs.content()) }
+            if (newItem) below.forEach { old -> launch { old.offset.animateTo(-travel, Springs.content()) } }
+        }
+        layers.removeAll(below)
     }
     Canvas(Modifier.fillMaxSize()) {
-        previous?.let { drawCover(it, 1f) }
-        shown?.let { drawCover(it, fade.value) }
+        layers.forEach { drawCover(it.image, it.alpha.value, it.offset.value, overscanPx) }
     }
 }
 
-private fun DrawScope.drawCover(image: ImageBitmap, alpha: Float) {
-    val scale = max(size.width / image.width, size.height / image.height)
-    val srcWidth = (size.width / scale).roundToInt().coerceIn(1, image.width)
-    val srcHeight = (size.height / scale).roundToInt().coerceIn(1, image.height)
+private fun DrawScope.drawCover(image: ImageBitmap, alpha: Float, offsetX: Float, overscan: Float) {
+    if (alpha <= 0f) return
+    val scale = max((size.width + 2 * overscan) / image.width, size.height / image.height)
+    val width = image.width * scale
+    val height = image.height * scale
     drawImage(
         image = image,
-        srcOffset = IntOffset((image.width - srcWidth) / 2, (image.height - srcHeight) / 2),
-        srcSize = IntSize(srcWidth, srcHeight),
-        dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
-        alpha = alpha,
+        dstOffset = IntOffset(((size.width - width) / 2f + offsetX).roundToInt(), ((size.height - height) / 2f).roundToInt()),
+        dstSize = IntSize(width.roundToInt(), height.roundToInt()),
+        alpha = alpha.coerceIn(0f, 1f),
         filterQuality = FilterQuality.Low,
     )
 }

@@ -29,10 +29,12 @@ Status: implemented in stage 1 (`ui/theme`, `ui/glass`, `ui/motion`). Values mea
 
 ## Type
 
-Inter (Latin) and Heebo (Hebrew), bundled as variable fonts subset to the needed characters and limited to
-weights 400–700 (Inter 88 KB, Heebo 36 KB; Inter's optical-size axis pinned at 18). On Android 10+ a
-`Typeface.CustomFallbackBuilder` chains Inter → Heebo → system per glyph, so Hebrew anywhere (UI or content
-titles) renders in Heebo.
+Inter (Latin) and Noto Sans Hebrew (Hebrew), bundled as variable fonts subset to the needed characters and
+limited to weights 400–700 (Inter 88 KB, Noto Sans Hebrew 43 KB; Inter's optical-size axis pinned at 18, Noto's
+width axis at 100). Noto Sans Hebrew replaced Heebo after the first TV test: its open, rational letterforms sit
+closer to the tvOS look (Apple's own Hebrew font cannot be used). On Android 10+ a
+`Typeface.CustomFallbackBuilder` chains Inter → Noto Sans Hebrew → system per glyph, so Hebrew anywhere (UI or
+content titles) renders in it while digits and Latin stay in Inter.
 
 | Style | Size | Weight | Use |
 |---|---|---|---|
@@ -50,32 +52,45 @@ titles) renders in Heebo.
 - Corner radii: app card **16 dp**; glass pill **fully rounded**; favorites shelf **28 dp**; menus and folders
   **24 dp**. Corners are continuous (`ContinuousRoundedShape`): each corner starts 1.5 × radius from the vertex
   and eases in with one cubic, so curvature ramps up from zero instead of jumping like a circular arc.
-- App card: 16:9. The brief asks for ~200 × 112 dp *and* 5 columns, but 5 × 200 dp does not fit the 864 dp content
-  width. Proposal: **160 × 90 dp with 16 dp gaps** (5 × 160 + 4 × 16 = 864 dp exactly). To be confirmed in stage 2.
+- App card: 16:9, **160 × 90 dp with 16 dp gaps** in a 5-column grid (5 × 160 + 4 × 16 = 864 dp, the full content
+  width). Chosen over the brief's ~200 × 112 dp, which does not fit 5 columns.
 - App card fallback (no TV banner): the icon centred on a fill of its dominant colour (computed once, cached).
 
 ## Liquid glass (cheap on Mali-G31)
 
-Never blur moving content in real time. Every glass surface is composed of layers that are static or
-pre-computed:
+Never blur moving content in real time. Every glass surface samples one **glass source** per hero backdrop,
+made once on Coil's decoder thread: centre-crop and downscale to 480 × 270 (1/4 of the UI surface), three box-blur
+passes of radius 2, saturation × 1.35 and brightness × 1.08. It keeps enough structure for refraction to read,
+and it doubles as the instant placeholder while the sharp backdrop decodes. Surfaces cross-fade between the old and
+new source when the hero changes.
 
-1. **Backdrop sample**: for each hero backdrop, once, on Coil's decoder thread: centre-crop and downscale to
-   240 × 135 (1/8), blur (three box passes, radius 6 ≈ Gaussian), saturate × 1.15; Coil caches the result. A glass
-   element draws the crop of this bitmap that lies behind it, through an `ImageShader` with bilinear filtering.
-   When the hero changes, glass cross-fades between the old and new blurred bitmaps.
-2. **Tint**: white 10% at rest, 18% focused.
-3. **Rim**: 1 dp stroke, linear gradient white 50% at top-start → 0% at bottom-end.
-4. **Inner highlight**: white 12% → 0% across the top 40% of the shape.
-5. **Outer shadow**: black 35%, 24 dp blur, 8 dp y-offset (focused: 45%, 36 dp, 16 dp).
+**Liquid path (Android 13+, default; `res/raw/glass_*.agsl`)** — per surface, in this order:
+
+1. **Lens** (`glass_lens.agsl`): the source seen through a rounded-rectangle lens. The whole surface magnifies
+   by 5%; towards the rim (a band of 38% of the short side) the sample is pulled inward by up to 18% of the short
+   side with a cubic ramp (refraction), red and blue split by 1.6 dp (dispersion), and the rim away from the light
+   is shaded by up to 22%. The rounded-rectangle distance field gives the edge normal.
+2. **Shade**: the screen's own scrims, evaluated in screen space, so glass over a darkened area is darkened too.
+3. **Tint**: white 8% at rest, 16% focused.
+4. **Light** (`glass_specular.agsl`): a 1.5 dp rim lit from the top-start (light vector (∓0.6, −0.8)), a softer
+   reflection on the opposite edge (55%), a 10 dp glow just inside the rim, and a faint sheen over the top half.
+   Focus raises the light by 30%.
+
+**Fallback path** (older Android, the "glass refraction" setting off, or if the shaders fail to compile or draw):
+the plain source crop, shade, tint (10% / 18%), an inner top highlight (white 12% → 0 over 40%), a 1 dp rim bright
+at the top-start corner, and a faint reflection rim at the bottom-end corner.
+
+Both paths fill the shape's path, so edges stay anti-aliased on any shape. The shaders run only when a frame is
+drawn (focus and hero transitions); an idle screen draws nothing. Outer shadow: black 35%, via the focus lift or
+`glassShadow` (6–24 dp).
 
 Overlays above the grid (menus, folders) take one downscaled snapshot of the screen when opening, blur it once
-and use it as their backdrop. An optional AGSL refraction pass (Android 13+, focused element or shelf only)
-stays behind a setting and is kept only if it holds 60 fps.
+and use it as their source.
 
-Kyant's "Backdrop" library (Apache-2.0, minSdk 21) was evaluated and not adopted for now: its blur uses
-`RenderEffect` (Android 12+) and its refraction `RuntimeShader` (Android 13+) on a live capture of the content
-behind each surface, i.e. a real-time blur every frame, which this design avoids on the Mali-G31. It stays a
-candidate for the optional refraction setting, measured against 60 fps in stage 4.
+Kyant's "Backdrop" library (Apache-2.0, minSdk 21) was evaluated and not adopted: its blur uses `RenderEffect`
+(Android 12+) and its refraction `RuntimeShader` (Android 13+) on a live capture of the content behind each
+surface, i.e. a real-time blur every frame, which this design avoids on the Mali-G31. The lens here is the same
+idea applied to a pre-blurred source.
 
 ## Motion
 
@@ -96,7 +111,8 @@ Springs everywhere; never linear tweens.
 - **OK / hold OK** (`Modifier.tvClickable`): click on release; hold for the long-press timeout opens the
   element's menu, and that key's release is swallowed.
 - **Hero change** (Left/Right on Play): backdrop cross-fades with a 24 dp parallax slide in the direction of
-  travel; source label, logo, metadata, synopsis and progress fade/slide in with a 40 ms stagger while the old
+  travel (images are drawn 24 dp wider than the screen on each side, so the slide never uncovers an edge; the
+  item's soft glass source shows first and the sharp image fades in over it); source label, logo, metadata, synopsis and progress fade/slide in with a 40 ms stagger while the old
   text fades out fast. Page dots sit in a glass pill. Play is outside the animated block, so it keeps focus.
 - **Auto-advance**: every 8 s, only while the hero is visible and focused; pauses for 20 s after any key press.
 - **Leaving the hero**: its text fades out and the backdrop cross-fades to the blurred, darkened version that
@@ -107,7 +123,8 @@ Springs everywhere; never linear tweens.
 
 ## Images
 
-- Backdrops decoded at the window size (≤ 1920 px wide); logos fit in 600 × 600 px and are padded by 24 px.
+- Backdrops decoded at the window size (≤ 1920 px wide) as hardware bitmaps, retried once as software bitmaps if
+  that fails; logos fit in 600 × 600 px and are padded by 24 px.
 - Memory cache 32 MB, disk cache 96 MB; the memory cache is cleared when the home screen is hidden.
 - Small memory cache, capped disk cache; prefetch only the next and previous hero items.
 - A mostly dark logo gets a subtle light glow so it stays readable.

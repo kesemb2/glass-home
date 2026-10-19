@@ -18,8 +18,8 @@ import androidx.compose.ui.text.font.Typeface as ComposeTypeface
 import android.graphics.fonts.FontFamily as PlatformFontFamily
 
 /**
- * Type scale (see DESIGN.md). Inter covers Latin; Heebo is chained as a per-glyph fallback so Hebrew in any
- * string (UI or content titles) renders in Heebo, then the system font for anything else.
+ * Type scale (see DESIGN.md). Inter covers Latin; Noto Sans Hebrew is chained as a per-glyph fallback so Hebrew in any
+ * string (UI or content titles) renders in it, then the system font for anything else.
  */
 @Immutable
 class GlassTypography(family: (weight: Int) -> FontFamily) {
@@ -56,7 +56,7 @@ class GlassTypography(family: (weight: Int) -> FontFamily) {
                             .build(),
                     ).build()
                     val typeface = Typeface.CustomFallbackBuilder(family(R.font.inter))
-                        .addCustomFallback(family(R.font.heebo))
+                        .addCustomFallback(family(R.font.noto_sans_hebrew))
                         .setSystemFallback("sans-serif")
                         .setStyle(FontStyle(weight, FontStyle.FONT_SLANT_UPRIGHT))
                         .build()

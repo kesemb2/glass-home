@@ -19,8 +19,11 @@ object FastBlur {
         }
     }
 
-    /** Pushes colours away from their luminance; factor 1 keeps the image, > 1 saturates. Alpha is preserved. */
-    fun saturate(pixels: IntArray, factor: Float) {
+    /**
+     * Pushes colours away from their luminance (factor 1 keeps the image, > 1 saturates) and multiplies them by
+     * [gain]. Alpha is preserved.
+     */
+    fun saturate(pixels: IntArray, factor: Float, gain: Float = 1f) {
         for (i in pixels.indices) {
             val p = pixels[i]
             val a = p ushr 24
@@ -29,9 +32,9 @@ object FastBlur {
             val b = p and 0xFF
             val l = 0.2126f * r + 0.7152f * g + 0.0722f * b
             pixels[i] = (a shl 24) or
-                (channel(l + (r - l) * factor) shl 16) or
-                (channel(l + (g - l) * factor) shl 8) or
-                channel(l + (b - l) * factor)
+                (channel((l + (r - l) * factor) * gain) shl 16) or
+                (channel((l + (g - l) * factor) * gain) shl 8) or
+                channel((l + (b - l) * factor) * gain)
         }
     }
 

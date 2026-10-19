@@ -16,6 +16,8 @@ import kotlin.math.min
  */
 class ContinuousRoundedShape(private val radius: Dp) : Shape {
 
+    fun radiusPx(density: Density): Float = with(density) { radius.toPx() }
+
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val r = with(density) { radius.toPx() }
         val p = min(r * 1.5f, min(size.width, size.height) / 2f)

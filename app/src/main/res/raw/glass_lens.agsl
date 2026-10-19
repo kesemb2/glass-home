@@ -1,0 +1,39 @@
+// Liquid-glass lens (AGSL, Android 13+). Samples the pre-blurred backdrop through a rounded-rectangle "lens":
+// the whole surface magnifies slightly, and towards the rim the sample is pulled inward (refraction) with a
+// small red/blue split (dispersion). Coordinates are the surface's local pixels.
+uniform shader backdrop;  // screen-sized blurred backdrop, its local matrix maps it onto this surface
+uniform float2 size;      // surface size, px
+uniform float radius;     // corner radius, px
+uniform float depth;      // inward displacement at the rim, px
+uniform float band;       // width of the refracting rim, px
+uniform float zoom;       // overall magnification (0.05 = 5%)
+uniform float chroma;     // red/blue split at the rim, px
+uniform float2 light;     // unit vector towards the light, y down; the far rim is shaded slightly
+
+float sdRoundRect(float2 p, float2 halfSize, float r) {
+    float2 q = abs(p) - halfSize + float2(r, r);
+    return length(max(q, float2(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - r;
+}
+
+half4 main(float2 coord) {
+    float2 halfSize = size * 0.5;
+    float2 p = coord - halfSize;
+    float r = min(radius, min(halfSize.x, halfSize.y));
+    float d = sdRoundRect(p, halfSize, r);
+    float2 grad = float2(
+        sdRoundRect(p + float2(1.0, 0.0), halfSize, r) - sdRoundRect(p - float2(1.0, 0.0), halfSize, r),
+        sdRoundRect(p + float2(0.0, 1.0), halfSize, r) - sdRoundRect(p - float2(0.0, 1.0), halfSize, r));
+    float2 n = grad / max(length(grad), 0.0001);
+    float t = clamp(1.0 + d / band, 0.0, 1.0);
+    float bend = t * t * t;
+    float2 uv = coord - p * zoom - n * (bend * depth);
+    half4 base = backdrop.eval(uv);
+    if (bend < 0.002) {
+        return base;
+    }
+    float2 split = n * (bend * chroma);
+    half red = backdrop.eval(uv + split).r;
+    half blue = backdrop.eval(uv - split).b;
+    half shade = half(1.0 - 0.22 * bend * max(-dot(n, light), 0.0));
+    return half4(half3(red, base.g, blue) * shade, base.a);
+}

@@ -1,0 +1,34 @@
+// Liquid-glass light (AGSL, Android 13+): a crisp rim lit from one side, a softer reflection on the opposite
+// edge, and a faint glow just inside the rim. Returns premultiplied white.
+uniform float2 size;      // surface size, px
+uniform float radius;     // corner radius, px
+uniform float2 light;     // unit vector towards the light, y down: (-0.6, -0.8) is top-left
+uniform float px;         // pixels per dp
+uniform float strength;   // overall intensity
+
+float sdRoundRect(float2 p, float2 halfSize, float r) {
+    float2 q = abs(p) - halfSize + float2(r, r);
+    return length(max(q, float2(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - r;
+}
+
+half4 main(float2 coord) {
+    float2 halfSize = size * 0.5;
+    float2 p = coord - halfSize;
+    float r = min(radius, min(halfSize.x, halfSize.y));
+    float d = sdRoundRect(p, halfSize, r);
+    float2 grad = float2(
+        sdRoundRect(p + float2(1.0, 0.0), halfSize, r) - sdRoundRect(p - float2(1.0, 0.0), halfSize, r),
+        sdRoundRect(p + float2(0.0, 1.0), halfSize, r) - sdRoundRect(p - float2(0.0, 1.0), halfSize, r));
+    float2 n = grad / max(length(grad), 0.0001);
+    float inside = -d;
+    float rim = 1.0 - smoothstep(0.0, 1.5 * px, inside);
+    float halo = 1.0 - smoothstep(0.0, 10.0 * px, inside);
+    float key = pow(max(dot(n, light), 0.0), 2.0);
+    float bounce = pow(max(-dot(n, light), 0.0), 2.0) * 0.55;
+    float lit = max(key, bounce);
+    // Soft sheen over the top of the surface, as if the light falls on a curved top face.
+    float sheen = (1.0 - smoothstep(0.0, size.y * 0.5, coord.y)) * 0.06;
+    float a = rim * (0.22 + 0.78 * lit) + halo * halo * lit * 0.22 + sheen;
+    a = clamp(a * strength, 0.0, 1.0);
+    return half4(a, a, a, a);
+}

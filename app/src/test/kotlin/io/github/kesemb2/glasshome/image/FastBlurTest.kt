@@ -54,6 +54,14 @@ class FastBlurTest {
     }
 
     @Test
+    fun gainBrightensAndClamps() {
+        val pixels = intArrayOf(argb(255, 100, 100, 100), argb(255, 250, 250, 250))
+        FastBlur.saturate(pixels, factor = 1f, gain = 1.1f)
+        assertEquals(argb(255, 110, 110, 110), pixels[0])
+        assertEquals(argb(255, 255, 255, 255), pixels[1])
+    }
+
+    @Test
     fun darkLogoNeedsGlowAndLightLogoDoesNot() {
         val dark = IntArray(100) { argb(255, 20, 20, 30) }
         val light = IntArray(100) { argb(255, 230, 230, 230) }

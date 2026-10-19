@@ -27,23 +27,34 @@ import kotlin.math.roundToInt
 
 /** Image requests for the hero, each decoded at the size it is shown at. */
 object HeroImages {
-    /** The pre-blurred backdrop is 1/8 of the 1920 x 1080 UI surface. */
-    const val BLUR_WIDTH = 240
-    const val BLUR_HEIGHT = 135
-    private const val BLUR_RADIUS = 6
-    private const val BLUR_SATURATION = 1.15f
+    /**
+     * The glass source: the backdrop at 1/4 of the 1920 x 1080 UI surface, lightly blurred and made a little more
+     * vivid. Liquid glass refracts it, so it keeps some structure instead of being a uniform haze. It is also the
+     * instant placeholder while the sharp backdrop decodes.
+     */
+    const val BLUR_WIDTH = 480
+    const val BLUR_HEIGHT = 270
+    private const val BLUR_RADIUS = 2
+    private const val BLUR_SATURATION = 1.35f
+    private const val BLUR_GAIN = 1.08f
 
     const val LOGO_MAX_PX = 600
 
     /** Transparent margin added around every logo, room for the glow on dark logos. */
     const val LOGO_PAD_PX = 24
 
-    fun backdrop(context: Context, url: String, widthPx: Int, heightPx: Int): ImageRequest =
+    fun backdrop(context: Context, url: String, widthPx: Int, heightPx: Int, hardware: Boolean = true): ImageRequest =
         ImageRequest.Builder(context)
             .data(url)
             .size(widthPx, heightPx)
             .scale(Scale.FILL)
+            .allowHardware(hardware)
             .build()
+
+    /** The sharp backdrop; retries once as a software bitmap if the hardware decode fails on this device. */
+    suspend fun loadBackdrop(loader: ImageLoader, context: Context, url: String, widthPx: Int, heightPx: Int): ImageBitmap? =
+        loader.loadImageBitmap(backdrop(context, url, widthPx, heightPx))
+            ?: loader.loadImageBitmap(backdrop(context, url, widthPx, heightPx, hardware = false))
 
     fun blurred(context: Context, url: String): ImageRequest =
         ImageRequest.Builder(context)
@@ -63,9 +74,9 @@ object HeroImages {
             .transformations(LogoTransformation)
             .build()
 
-    /** Centre-crops to 240 x 135, blurs and slightly saturates. Runs once per backdrop on Coil's decoder thread. */
+    /** Centre-crops to 480 x 270, blurs and saturates. Runs once per backdrop on Coil's decoder thread. */
     private object BlurTransformation : Transformation() {
-        override val cacheKey: String = "glass-blur-v1"
+        override val cacheKey: String = "glass-source-v2"
 
         override suspend fun transform(input: Bitmap, size: Size): Bitmap {
             val out = Bitmap.createBitmap(BLUR_WIDTH, BLUR_HEIGHT, Bitmap.Config.ARGB_8888)
@@ -79,7 +90,7 @@ object HeroImages {
             val pixels = IntArray(BLUR_WIDTH * BLUR_HEIGHT)
             out.getPixels(pixels, 0, BLUR_WIDTH, 0, 0, BLUR_WIDTH, BLUR_HEIGHT)
             FastBlur.blur(pixels, BLUR_WIDTH, BLUR_HEIGHT, BLUR_RADIUS)
-            FastBlur.saturate(pixels, BLUR_SATURATION)
+            FastBlur.saturate(pixels, BLUR_SATURATION, BLUR_GAIN)
             out.setPixels(pixels, 0, BLUR_WIDTH, 0, 0, BLUR_WIDTH, BLUR_HEIGHT)
             return out
         }
@@ -120,13 +131,24 @@ suspend fun ImageLoader.loadImageBitmap(request: ImageRequest): ImageBitmap? =
 @Immutable
 sealed interface ImageState {
     data object Loading : ImageState
-    data class Ready(val bitmap: ImageBitmap) : ImageState
+    data class Ready(val bitmap: ImageBitmap, val url: String) : ImageState
     data object Failed : ImageState
 }
 
+/** The bitmap if this state is a loaded image of [url] (a state can briefly still hold the previous url's image). */
+fun ImageState.bitmapFor(url: String?): ImageBitmap? = (this as? ImageState.Ready)?.takeIf { it.url == url }?.bitmap
+
 /** Loads [url] with the request built by [request]; restarts when the url changes. */
 @Composable
-fun rememberImage(url: String?, request: (Context, String) -> ImageRequest): State<ImageState> {
+fun rememberImage(url: String?, request: (Context, String) -> ImageRequest): State<ImageState> =
+    rememberLoadedImage(url) { loader, context, u -> loader.loadImageBitmap(request(context, u)) }
+
+/** Loads [url] with [load]; restarts when the url changes. */
+@Composable
+fun rememberLoadedImage(
+    url: String?,
+    load: suspend (loader: ImageLoader, context: Context, url: String) -> ImageBitmap?,
+): State<ImageState> {
     val context = LocalContext.current
     return produceState<ImageState>(initialValue = if (url == null) ImageState.Failed else ImageState.Loading, url) {
         if (url == null) {
@@ -135,6 +157,6 @@ fun rememberImage(url: String?, request: (Context, String) -> ImageRequest): Sta
         }
         value = ImageState.Loading
         val loader = (context.applicationContext as GlassHomeApp).imageLoader
-        value = loader.loadImageBitmap(request(context, url))?.let { ImageState.Ready(it) } ?: ImageState.Failed
+        value = load(loader, context, url)?.let { ImageState.Ready(it, url) } ?: ImageState.Failed
     }
 }
