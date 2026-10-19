@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -59,6 +60,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -132,7 +135,8 @@ const val GRID_DIM = 0.4f
  *
  * The backdrop stays fixed; the text moves up with [camera] (px) and fades out as [grid] goes to 1, while the
  * backdrop cross-fades to a heavily blurred, darker version for the app grid, which [gridGlass] also gets for the
- * glass there. The text ends [contentBottom] above the screen's bottom edge (above the favorites shelf).
+ * glass there. The whole backdrop is recorded into [backdropLayer], which live glass draws again behind itself.
+ * The text ends [contentBottom] above the screen's bottom edge (above the favorites shelf).
  * [focusModifier] goes on Play (or Allow), before its focus target.
  */
 @Composable
@@ -146,6 +150,7 @@ fun HeroScreen(
     logoScale: Float,
     textScale: Float,
     gridGlass: GlassBackdrop,
+    backdropLayer: GraphicsLayer,
     focusModifier: Modifier,
     onPlay: (HeroItem) -> Unit,
     onDismiss: (HeroItem) -> Unit,
@@ -236,7 +241,16 @@ fun HeroScreen(
 
     BackHandler(enabled = menuOpen) { menuOpen = false }
 
-    Box(Modifier.fillMaxSize()) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            // Its own layer, so the backdrop animating re-records only this.
+            .graphicsLayer()
+            .drawWithContent {
+                backdropLayer.record { this@drawWithContent.drawContent() }
+                drawLayer(backdropLayer)
+            },
+    ) {
         HeroBackdrop(item?.key, sharp.bitmapFor(backdropUrl), soft.bitmapFor(backdropUrl), forward, rtl, overscanPx) {
             grid() >= 1f
         }

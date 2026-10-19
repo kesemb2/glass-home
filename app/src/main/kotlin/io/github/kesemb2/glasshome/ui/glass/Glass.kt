@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -32,8 +33,11 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.layer.CompositingStrategy
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -45,6 +49,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -55,6 +60,7 @@ import io.github.kesemb2.glasshome.ui.theme.Springs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Screen-space darkening behind glass (for example the hero's scrims): a horizontal ramp from [alphaX] at [fromX]
@@ -133,36 +139,75 @@ class GlassBackdrop {
 val LocalGlassBackdrop = staticCompositionLocalOf<GlassBackdrop?> { null }
 
 /**
- * For glass inside a page that scrolls over a fixed backdrop: the page's current scroll offset (px, the same
- * rounded value its layout uses). Such glass samples the backdrop as if the page were at rest, so scrolling does
- * not render it again on every frame; the page only ever rests at positions where that is exact or off screen.
+ * Live glass (Android 13+): draws what is behind the glass, in root coordinates — the recorded layers of the
+ * screen under it. Glass renders a small, blurred copy of that region every frame it changes, so it follows the
+ * content behind it in real time. Null: the glass uses the pre-blurred image of [LocalGlassBackdrop].
+ */
+val LocalGlassLive = staticCompositionLocalOf<(DrawScope.() -> Unit)?> { null }
+
+/**
+ * For glass inside a page that scrolls over a fixed backdrop (cached mode only): the page's current scroll offset
+ * (px, the same rounded value its layout uses). Such glass samples the backdrop as if the page were at rest, so
+ * scrolling does not render it again on every frame; the page only rests where that is exact or off screen.
  */
 val LocalGlassScroll = staticCompositionLocalOf<(() -> Float)?> { null }
 
+/** The glass look (Settings › Glass). */
+@Immutable
+data class GlassStyle(
+    /** Live glass (follows the content behind it every frame); off renders it once per backdrop image. */
+    val live: Boolean = true,
+    /** Blur of the content behind live glass, dp (cached glass uses its pre-blurred image). */
+    val blurDp: Float = 6f,
+    /** Refraction strength, 1 = as designed. */
+    val refraction: Float = 1f,
+    /** -1..1, 0 = unchanged. */
+    val brightness: Float = 0f,
+    /** How frosted (tinted) the glass is; 0 = clear. */
+    val frost: Float = 0.141f,
+)
+
+val LocalGlassStyle = compositionLocalOf { GlassStyle() }
+
 /**
- * The liquid-glass lens shader (AGSL, Android 13+; source in res/raw/glass_lens.agsl). Compiled once; if that
- * fails, or on older Android, or when [enabled] is off, surfaces fall back to the layered look.
+ * The liquid-glass shaders (AGSL, Android 13+; sources in res/raw): the cached lens (glass_lens) and the live
+ * body and rim (glass_body, glass_rim). Each is compiled once; if that fails, or on older Android, surfaces fall
+ * back to the layered look.
  */
 object LiquidGlass {
-    /** The "glass refraction" setting; observable, so surfaces switch paths as soon as it changes. */
-    var enabled: Boolean by mutableStateOf(true)
-
     @Volatile
     private var failed = false
-    private var source: String? = null
+    private var lens: String? = null
+    private var live: LiveSources? = null
 
     fun source(context: Context): String? {
-        if (!enabled || failed || Build.VERSION.SDK_INT < 33) return null
-        source?.let { return it }
-        return try {
-            val loaded = context.resources.openRawResource(R.raw.glass_lens).bufferedReader().use { it.readText() }
-            compile(loaded)
-            loaded.also { source = it }
+        if (failed || Build.VERSION.SDK_INT < 33) return null
+        lens?.let { return it }
+        load { lens = read(context, R.raw.glass_lens).also { compile(it) } }
+        return lens
+    }
+
+    fun liveSources(context: Context): LiveSources? {
+        if (failed || Build.VERSION.SDK_INT < 33) return null
+        live?.let { return it }
+        load {
+            val body = read(context, R.raw.glass_body).also { compile(it) }
+            val rim = read(context, R.raw.glass_rim).also { compile(it) }
+            live = LiveSources(body, rim)
+        }
+        return live
+    }
+
+    private inline fun load(block: () -> Unit) {
+        try {
+            block()
         } catch (_: Exception) {
             failed = true
-            null
         }
     }
+
+    private fun read(context: Context, id: Int): String =
+        context.resources.openRawResource(id).bufferedReader().use { it.readText() }
 
     /** A draw-time failure (driver, uniforms) switches every surface to the fallback for the rest of the run. */
     internal fun disable() {
@@ -171,37 +216,49 @@ object LiquidGlass {
 
     internal val usable: Boolean get() = !failed
 
-    @RequiresApi(33)
     private fun compile(source: String) {
-        RuntimeShader(source)
+        if (Build.VERSION.SDK_INT >= 33) RuntimeShader(source)
     }
 }
+
+class LiveSources(val body: String, val rim: String)
 
 /**
  * Liquid-glass surface, drawn behind the content.
  *
- * With the lens shader (Android 13+): the pre-blurred backdrop seen through a bevelled rounded-rectangle lens —
- * strong inward refraction in the outermost pixels (the rim shows a compressed mirror of what is inside), colour
- * dispersion there, vibrancy, an adaptive tint (lighter over dark content, darker over light), and two symmetric
- * rim-light lobes; the screen's scrims are refracted with the image. Without it: the plain backdrop crop, the
- * scrims, a tint (stronger when [focus] is 1), an inner top highlight and gradient rims.
+ * Live (Android 13+, [GlassStyle.live] and a [LocalGlassLive] source): every frame the content behind it changes,
+ * the region behind the surface is rendered into a small offscreen layer (half resolution for large surfaces),
+ * blurred, and bent by the lens (glass_body.agsl): strong inward refraction in the outermost pixels, dispersion
+ * there, vibrancy, an adaptive frost tint and brightness. The rim light (glass_rim.agsl) is drawn on top at full
+ * resolution, only along the edge. Nothing runs while the screen is still.
  *
- * Each surface is rendered once into a cached offscreen layer per backdrop image and only re-rendered when what it
- * shows changes (its image, position, size, focus or the scrims). Everything else on screen can redraw around it
- * for the cost of copying that layer, and a cross-fade between two images only changes the layers' alpha.
+ * Cached: the screen's pre-blurred image seen through the same lens (glass_lens.agsl), rendered once into an
+ * offscreen layer per image and re-rendered only when what it shows changes. Without shaders: the plain image
+ * crop, the scrims, a tint (stronger when [focus] is 1), an inner top highlight and gradient rims.
  */
 fun Modifier.glass(shape: Shape, focus: () -> Float = { 0f }, rim: Boolean = true): Modifier = composed {
+    val context = LocalContext.current
     val backdrop = LocalGlassBackdrop.current
+    val live = LocalGlassLive.current
+    val style = LocalGlassStyle.current
     val scroll = LocalGlassScroll.current
-    val lens = LiquidGlass.source(LocalContext.current)
+    val liveSources = if (style.live && live != null) LiquidGlass.liveSources(context) else null
+    val lens = LiquidGlass.source(context)
     val sampler = remember { BackdropSampler() }
-    onGloballyPositioned { sampler.update(it, scroll?.invoke() ?: 0f) }
+    onGloballyPositioned { sampler.update(it, if (liveSources == null) scroll?.invoke() ?: 0f else 0f) }
         .drawWithCache {
             val outline = shape.createOutline(size, layoutDirection, this)
             val rtl = layoutDirection == LayoutDirection.Rtl
+            val radius = outline.cornerRadius(shape, this)
+            val minSide = min(size.width, size.height)
+            val bevel = max(2f, min(BEVEL_MAX_PX, minSide * BEVEL_RATIO))
+            val rimBand = max(2f, min(RIM_BAND_MAX_PX, minSide * RIM_BAND_RATIO))
             val look = GlassLook(
                 path = outline.asPath(),
-                radius = outline.cornerRadius(shape, this),
+                radius = radius,
+                bevel = bevel,
+                rimBand = rimBand,
+                rimStroke = Stroke(width = 2f * (min(bevel * 0.3f, rimBand).coerceAtLeast(2f) + 4f)),
                 rimBrush = Brush.linearGradient(
                     0f to GlassColors.GlassRim,
                     0.65f to Color.Transparent,
@@ -224,7 +281,13 @@ fun Modifier.glass(shape: Shape, focus: () -> Float = { 0f }, rim: Boolean = tru
                 rim = rim,
             )
             val slots = arrayOf(GlassSlot(obtainGraphicsLayer()), GlassSlot(obtainGraphicsLayer()))
-            onDrawBehind { sampler.draw(this, slots, look, backdrop, lens, focus().coerceIn(0f, 1f)) }
+            val sample = obtainGraphicsLayer()
+            onDrawBehind {
+                val focusAmount = focus().coerceIn(0f, 1f)
+                val drewLive = live != null && liveSources != null &&
+                    sampler.drawLive(this, sample, look, live, liveSources, style, focusAmount)
+                if (!drewLive) sampler.draw(this, slots, look, backdrop, lens, style, focusAmount)
+            }
         }
 }
 
@@ -246,10 +309,35 @@ private fun Outline.cornerRadius(shape: Shape, density: Density): Float = when (
     is Outline.Generic -> (shape as? ContinuousRoundedShape)?.radiusPx(density)?.times(1.25f) ?: 0f
 }
 
-/** A surface's shape and the brushes of the fallback look, rebuilt only when its size or direction changes. */
+// Lens geometry (px values were tuned against the reference implementation; see DESIGN.md). It scales with the
+// surface's short side, so small pills are not all rim.
+private const val BEVEL_MAX_PX = 48f
+private const val BEVEL_RATIO = 0.3f
+private const val REFRACT_MAX_PX = 160f
+private const val REFRACT_RATIO = 0.7f
+private const val REFERENCE_SIDE_DP = 110f
+private const val DISPERSION = 0.12f
+private const val LIGHT_X = 0.866f
+private const val LIGHT_Y = 0.5f
+private const val SPECULAR = 1.25f
+private const val RIM_BAND_MAX_PX = 6f
+private const val RIM_BAND_RATIO = 0.05f
+private const val VIBRANCY = 1.5f
+private const val FOCUS_TINT = 0.06f
+
+/** Live glass renders surfaces larger than this (px²) at half resolution; the content behind is blurred anyway. */
+private const val HALF_RES_AREA = 120_000f
+
+private fun refractPx(minSide: Float, density: Float, strength: Float): Float =
+    min(REFRACT_MAX_PX, REFRACT_RATIO * minSide * min(1f, minSide / (REFERENCE_SIDE_DP * density))) * strength
+
+/** A surface's shape, lens geometry and the brushes of the fallback look; rebuilt only when its size changes. */
 private class GlassLook(
     val path: Path,
     val radius: Float,
+    val bevel: Float,
+    val rimBand: Float,
+    val rimStroke: Stroke,
     val rimBrush: Brush,
     val reflectionBrush: Brush,
     val highlight: Brush,
@@ -267,6 +355,7 @@ private data class SlotKey(
     val shade: GlassShade?,
     val zoom: Float,
     val liquid: Boolean,
+    val style: GlassStyle,
 )
 
 /** One cached rendering of a surface (an offscreen layer) for one backdrop image. */
@@ -280,13 +369,14 @@ private class GlassSlot(val layer: GraphicsLayer) {
 }
 
 /**
- * Maps the screen-sized blurred bitmap onto one surface. The surface's position is observable state, so a
- * surface that moves (scrolling, focus scale) renders its sample again.
+ * Places one surface over what is behind it. The surface's position is observable state, so a surface that moves
+ * (scrolling, focus scale) renders its sample again.
  */
 private class BackdropSampler {
     private var origin by mutableStateOf(Offset.Zero)
     private var root by mutableStateOf(Size.Zero)
     private val matrix = Matrix()
+    private var live: Any? = null // LiveGlass on Android 13+
 
     class Placement(val origin: Offset, val root: Size)
 
@@ -313,7 +403,27 @@ private class BackdropSampler {
         )
     }
 
-    fun draw(scope: DrawScope, slots: Array<GlassSlot>, look: GlassLook, backdrop: GlassBackdrop?, source: String?, focus: Float) {
+    /** Live glass; false when it cannot draw (not placed yet, shader failure), so the caller falls back. */
+    fun drawLive(
+        scope: DrawScope, sample: GraphicsLayer, look: GlassLook, content: DrawScope.() -> Unit, sources: LiveSources,
+        style: GlassStyle, focus: Float,
+    ): Boolean {
+        if (Build.VERSION.SDK_INT < 33 || !LiquidGlass.usable) return false
+        val placement = placement() ?: return false
+        return try {
+            val glass = (live as? LiveGlass) ?: LiveGlass(sources).also { live = it }
+            glass.draw(scope, sample, look, content, placement.origin, style, focus)
+            true
+        } catch (_: Exception) {
+            LiquidGlass.disable()
+            false
+        }
+    }
+
+    fun draw(
+        scope: DrawScope, slots: Array<GlassSlot>, look: GlassLook, backdrop: GlassBackdrop?, source: String?,
+        style: GlassStyle, focus: Float,
+    ) {
         val placement = placement()
         val current = backdrop?.current
         val previous = backdrop?.previous
@@ -322,7 +432,7 @@ private class BackdropSampler {
         val shade = placement?.let { backdrop?.shade?.invoke(it.root) }
         val zoom = backdrop?.zoom ?: 1f
         val liquid = source != null && LiquidGlass.usable && Build.VERSION.SDK_INT >= 33
-        val frame = Frame(placement, shade, zoom, focus, look, source, liquid)
+        val frame = Frame(placement, shade, zoom, focus, look, source, liquid, style)
         if (fading) drawSlot(scope, slots, previous, current, 1f, frame)
         drawSlot(scope, slots, current, if (fading) previous else null, if (fading) fade else 1f, frame)
     }
@@ -335,11 +445,13 @@ private class BackdropSampler {
         val look: GlassLook,
         val source: String?,
         val liquid: Boolean,
+        val style: GlassStyle,
     )
 
     private fun drawSlot(scope: DrawScope, slots: Array<GlassSlot>, bitmap: ImageBitmap?, other: ImageBitmap?, alpha: Float, frame: Frame) {
         val key = SlotKey(
-            bitmap, frame.placement?.origin, frame.placement?.root, scope.size, frame.focus, frame.shade, frame.zoom, frame.liquid,
+            bitmap, frame.placement?.origin, frame.placement?.root, scope.size, frame.focus, frame.shade, frame.zoom,
+            frame.liquid, frame.style,
         )
         // The slot already showing this, else one with the same image, else one the other layer does not need.
         val slot = slots.firstOrNull { it.key == key }
@@ -362,7 +474,7 @@ private class BackdropSampler {
         if (frame.liquid && bitmap != null && placement != null && frame.source != null && Build.VERSION.SDK_INT >= 33) {
             try {
                 val lens = (slot.lens as? Lens) ?: Lens(frame.source).also { slot.lens = it }
-                lens.draw(scope, look, bitmap, mapBitmap(bitmap, placement, frame.zoom), placement, frame.shade, frame.focus)
+                lens.draw(scope, look, bitmap, mapBitmap(bitmap, placement, frame.zoom), placement, frame.shade, frame.focus, frame.style)
                 return
             } catch (_: Exception) {
                 LiquidGlass.disable()
@@ -383,7 +495,90 @@ private class BackdropSampler {
     }
 }
 
-/** A compiled lens for one cached layer; only its input bitmap and uniforms change, so nothing recompiles. */
+/**
+ * Live glass for one surface: the region behind it, recorded into [GraphicsLayer] `sample` at 1/1 or 1/2 scale
+ * with a margin for the blur, gets a RenderEffect (blur, then the lens) and is drawn scaled back up; the rim light
+ * follows at full resolution as a stroke along the edge. The recording only references the live layers, so it is
+ * cheap; the GPU renders the sample whenever the content behind changes.
+ */
+@RequiresApi(33)
+private class LiveGlass(sources: LiveSources) {
+    private val body = RuntimeShader(sources.body)
+    private val rim = RuntimeShader(sources.rim)
+    private val rimBrush = ShaderBrush(rim)
+    private var effectKey: Any? = null
+    private var effect: androidx.compose.ui.graphics.RenderEffect? = null
+
+    private data class EffectKey(
+        val width: Float, val height: Float, val scale: Float, val pad: Float, val blur: Float, val radius: Float,
+        val style: GlassStyle, val focus: Float,
+    )
+
+    fun draw(
+        scope: DrawScope, sample: GraphicsLayer, look: GlassLook, content: DrawScope.() -> Unit, origin: Offset,
+        style: GlassStyle, focus: Float,
+    ) {
+        val width = scope.size.width
+        val height = scope.size.height
+        if (width < 1f || height < 1f) return
+        val k = if (width * height > HALF_RES_AREA) 2f else 1f
+        val blur = style.blurDp * scope.density / k
+        val pad = ceil(blur * 2f)
+        val layerWidth = ceil(width / k + 2f * pad).toInt()
+        val layerHeight = ceil(height / k + 2f * pad).toInt()
+
+        sample.record(scope, scope.layoutDirection, IntSize(layerWidth, layerHeight)) {
+            translate(pad, pad) {
+                scale(1f / k, 1f / k, pivot = Offset.Zero) {
+                    translate(-origin.x, -origin.y) { content() }
+                }
+            }
+        }
+
+        val key = EffectKey(width, height, k, pad, blur, look.radius, style, focus)
+        if (key != effectKey) {
+            val minSide = min(width, height)
+            body.setFloatUniform("size", width / k, height / k)
+            body.setFloatUniform("inset", pad, pad)
+            body.setFloatUniform("radius", look.radius / k)
+            body.setFloatUniform("bevel", look.bevel / k)
+            body.setFloatUniform("refractPx", refractPx(minSide, scope.density, style.refraction) / k)
+            body.setFloatUniform("dispersion", DISPERSION)
+            body.setFloatUniform("saturation", VIBRANCY)
+            body.setFloatUniform("frost", style.frost)
+            body.setFloatUniform("brightness", style.brightness)
+            body.setFloatUniform("focusTint", FOCUS_TINT * focus)
+            val lens = android.graphics.RenderEffect.createRuntimeShaderEffect(body, "backdrop")
+            val chained = if (blur >= 0.5f) {
+                android.graphics.RenderEffect.createChainEffect(
+                    lens,
+                    android.graphics.RenderEffect.createBlurEffect(blur, blur, android.graphics.Shader.TileMode.CLAMP),
+                )
+            } else {
+                lens
+            }
+            effect = chained.asComposeRenderEffect()
+
+            rim.setFloatUniform("size", width, height)
+            rim.setFloatUniform("radius", look.radius)
+            rim.setFloatUniform("bevel", look.bevel)
+            rim.setFloatUniform("lightDir", LIGHT_X, LIGHT_Y)
+            rim.setFloatUniform("spec", SPECULAR * (1f + 0.3f * focus))
+            rim.setFloatUniform("rimBandMax", look.rimBand)
+            effectKey = key
+        }
+
+        sample.renderEffect = effect
+        sample.pivotOffset = Offset.Zero
+        sample.scaleX = k
+        sample.scaleY = k
+        sample.topLeft = IntOffset(-(pad * k).roundToInt(), -(pad * k).roundToInt())
+        scope.drawLayer(sample)
+        scope.drawPath(look.path, rimBrush, style = look.rimStroke)
+    }
+}
+
+/** A compiled cached-mode lens for one layer; only its input bitmap and uniforms change, so nothing recompiles. */
 @RequiresApi(33)
 private class Lens(source: String) {
     private val shader = RuntimeShader(source)
@@ -393,7 +588,7 @@ private class Lens(source: String) {
 
     fun draw(
         scope: DrawScope, look: GlassLook, image: ImageBitmap, map: Matrix, placement: BackdropSampler.Placement,
-        shade: GlassShade?, focus: Float,
+        shade: GlassShade?, focus: Float, style: GlassStyle,
     ) {
         val sample = sample?.takeIf { bitmap === image } ?: BitmapShader(
             image.asAndroidBitmap(),
@@ -407,21 +602,21 @@ private class Lens(source: String) {
         // The runtime shader keeps the child as it was when set, so set it again after moving it.
         shader.setInputShader("backdrop", sample)
 
-        // Lens geometry scales with the surface's short side, so small pills are not all rim.
         val width = scope.size.width
         val height = scope.size.height
         val minSide = min(width, height)
-        val reference = REFERENCE_SIDE_DP * scope.density
         shader.setFloatUniform("size", width, height)
         shader.setFloatUniform("radius", look.radius)
-        shader.setFloatUniform("bevel", max(2f, min(BEVEL_MAX_PX, minSide * BEVEL_RATIO)))
-        shader.setFloatUniform("refractPx", min(REFRACT_MAX_PX, REFRACT_RATIO * minSide * min(1f, minSide / reference)))
+        shader.setFloatUniform("bevel", look.bevel)
+        shader.setFloatUniform("refractPx", refractPx(minSide, scope.density, style.refraction))
         shader.setFloatUniform("dispersion", DISPERSION)
         shader.setFloatUniform("lightDir", LIGHT_X, LIGHT_Y)
         shader.setFloatUniform("spec", SPECULAR * (1f + 0.3f * focus))
-        shader.setFloatUniform("rimBandMax", max(2f, min(RIM_BAND_MAX_PX, minSide * RIM_BAND_RATIO)))
+        shader.setFloatUniform("rimBandMax", look.rimBand)
         shader.setFloatUniform("saturation", VIBRANCY)
         shader.setFloatUniform("focusTint", FOCUS_TINT * focus)
+        shader.setFloatUniform("frost", style.frost)
+        shader.setFloatUniform("brightness", style.brightness)
         shader.setFloatUniform("origin", placement.origin.x, placement.origin.y)
         if (shade != null) {
             shader.setFloatUniform("shadeX", shade.fromX, shade.toX, shade.alphaX, shade.uniform)
@@ -431,22 +626,5 @@ private class Lens(source: String) {
             shader.setFloatUniform("shadeY", 0f, 1f, 0f, 0f)
         }
         scope.drawPath(look.path, brush)
-    }
-
-    private companion object {
-        // Lens parameters (px values were tuned against the reference implementation; see DESIGN.md).
-        const val BEVEL_MAX_PX = 48f
-        const val BEVEL_RATIO = 0.3f
-        const val REFRACT_MAX_PX = 160f
-        const val REFRACT_RATIO = 0.7f
-        const val REFERENCE_SIDE_DP = 110f
-        const val DISPERSION = 0.12f
-        const val LIGHT_X = 0.866f
-        const val LIGHT_Y = 0.5f
-        const val SPECULAR = 1.25f
-        const val RIM_BAND_MAX_PX = 6f
-        const val RIM_BAND_RATIO = 0.05f
-        const val VIBRANCY = 1.5f
-        const val FOCUS_TINT = 0.06f
     }
 }

@@ -76,6 +76,7 @@ fun SettingsSheet(
                 when (page) {
                     SettingsPage.Main -> MainPage(apps, onPage)
                     SettingsPage.Language -> LanguagePage(apps.settings.language, onLanguage)
+                    SettingsPage.Glass -> GlassPage(apps.settings)
                     SettingsPage.Hidden -> HiddenPage(apps)
                     SettingsPage.About -> AboutPage()
                 }
@@ -132,6 +133,11 @@ private fun ColumnScope.MainPage(apps: AppsController, onPage: (SettingsPage) ->
             onClick = { onPage(SettingsPage.Language) },
             modifier = Modifier.focusRequester(first),
         )
+        MenuRow(
+            text = stringResource(R.string.settings_glass),
+            secondary = stringResource(R.string.settings_glass_hint),
+            onClick = { onPage(SettingsPage.Glass) },
+        )
         ChoiceRow(
             text = stringResource(R.string.settings_app_size),
             secondary = stringResource(R.string.settings_app_size_hint),
@@ -167,12 +173,6 @@ private fun ColumnScope.MainPage(apps: AppsController, onPage: (SettingsPage) ->
             secondary = stringResource(R.string.settings_auto_advance_hint),
             trailing = state(settings.heroAutoAdvance),
             onClick = { settings.heroAutoAdvance = !settings.heroAutoAdvance },
-        )
-        MenuRow(
-            text = stringResource(R.string.settings_glass),
-            secondary = stringResource(R.string.settings_glass_hint),
-            trailing = state(settings.glassRefraction),
-            onClick = { settings.glassRefraction = !settings.glassRefraction },
         )
         MenuRow(
             text = stringResource(R.string.settings_perf),
@@ -238,6 +238,63 @@ private fun languageName(language: String): String = when (language) {
     AppLanguage.HEBREW -> "עברית"
     AppLanguage.ENGLISH -> "English"
     else -> stringResource(R.string.settings_language_system)
+}
+
+/**
+ * The glass look. This panel is glass itself, so every change shows on it at once (and on the screen behind it
+ * when live glass is on).
+ */
+@Composable
+private fun ColumnScope.GlassPage(settings: AppSettings) {
+    val first = rememberFirstFocus()
+    val on = stringResource(R.string.settings_on)
+    val off = stringResource(R.string.settings_off)
+    Title(stringResource(R.string.settings_glass))
+    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+        MenuRow(
+            text = stringResource(R.string.glass_live),
+            secondary = stringResource(R.string.glass_live_hint),
+            trailing = if (settings.liveGlass) on else off,
+            onClick = { settings.liveGlass = !settings.liveGlass },
+            modifier = Modifier.focusRequester(first),
+        )
+        ChoiceRow(
+            text = stringResource(R.string.glass_blur),
+            secondary = stringResource(R.string.glass_blur_hint),
+            options = AppSettings.BLURS,
+            selected = settings.blurDp,
+            label = { it.toString() },
+            onSelect = { settings.blurDp = it },
+        )
+        ChoiceRow(
+            text = stringResource(R.string.glass_refraction),
+            secondary = stringResource(R.string.glass_refraction_hint),
+            options = AppSettings.REFRACTIONS,
+            selected = settings.refractionPercent,
+            label = { "$it%" },
+            onSelect = { settings.refractionPercent = it },
+        )
+        ChoiceRow(
+            text = stringResource(R.string.glass_brightness),
+            secondary = null,
+            options = AppSettings.BRIGHTNESSES,
+            selected = settings.brightnessPercent,
+            label = { if (it > 0) "+$it%" else "$it%" },
+            onSelect = { settings.brightnessPercent = it },
+        )
+        ChoiceRow(
+            text = stringResource(R.string.glass_transparency),
+            secondary = stringResource(R.string.glass_transparency_hint),
+            options = AppSettings.TRANSPARENCIES,
+            selected = settings.transparencyPercent,
+            label = { "$it%" },
+            onSelect = { settings.transparencyPercent = it },
+        )
+        MenuRow(
+            text = stringResource(R.string.glass_reset),
+            onClick = { settings.resetGlass() },
+        )
+    }
 }
 
 /** The app's language, independent of the TV's; choosing one restarts the home screen in it. */

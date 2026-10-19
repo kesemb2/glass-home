@@ -67,7 +67,29 @@ content titles) renders in it while digits and Latin stay in Inter.
 
 ## Liquid glass (cheap on Mali-G31)
 
-Never blur moving content in real time. Every glass surface samples one **glass source** per hero backdrop,
+Two modes (Settings › Glass › Live glass), both with the same optics and the same settings: blur (0–32 dp,
+default 6), refraction (0–200%), brightness (−30…+30%) and transparency (0–100%, default 70%: the frost tint).
+
+**Live glass** (default, Android 13+) refracts what is really behind it, every frame it changes:
+
+- The backdrop, the scrolling page and the whole screen are recorded into GraphicsLayers (display lists, not
+  pixels) and drawn as usual. Each glass surface draws the region behind it again, from those layers, into a small
+  offscreen layer: half resolution for surfaces over 120 000 px² (the shelf, panels), full for small ones, with a
+  margin so the blur sees real content at the edges. A RenderEffect blurs it and runs the lens on it
+  (`res/raw/glass_body.agsl`: refraction, dispersion, vibrancy, frost, brightness), and the layer is drawn scaled
+  back up. The rim light (`res/raw/glass_rim.agsl`) is drawn on top at full resolution as a stroke along the edge,
+  so only the edge band is shaded.
+- What each surface sees: page glass (Play, page dots, shelf, folders) the backdrop; the top bar (clock, settings)
+  the backdrop and the page, so cards scroll under it; overlays the whole screen, drawn at a quarter of the
+  resolution and blurred by 20 dp as their background, and their glass refracts that. The screen under a fully
+  shown overlay is not drawn on screen, only into that quarter-resolution background, so changes behind it (a
+  setting taking effect) show through at once.
+- Cost: only frames that are drawn do any of this; an idle screen draws nothing. The GPU renders a surface's sample
+  again when the content behind it changes (the backdrop cross-fading, the page scrolling, focus moving under the
+  top bar).
+
+**Cached glass** (live glass off, or Android 12 and older) is the earlier design below: never blur moving content
+in real time. Every glass surface samples one **glass source** per hero backdrop,
 made once on Coil's decoder thread: centre-crop and downscale to 480 × 270 (1/4 of the UI surface), three box-blur
 passes of radius 1, saturation × 1.15. It keeps visible structure, so refraction reads, and it doubles as the
 instant placeholder while the sharp backdrop decodes. Surfaces cross-fade between the old and new source when the

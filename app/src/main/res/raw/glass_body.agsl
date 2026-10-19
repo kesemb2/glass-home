@@ -1,0 +1,72 @@
+// Live liquid glass, the body (AGSL, Android 13+): a RenderEffect on a small offscreen layer that holds the
+// live, already blurred content behind one glass surface (rendered at 1/1 or 1/2 resolution).
+//
+// Optical model adapted from "Liquid Glass Android" by pandadog (github.com/QWEA0/Liquid-Glass-Android),
+// MIT License, Copyright (c) 2025-2026 pandadog: rounded-rectangle distance field -> outward normal -> bevel
+// profile (inverse-square falloff) -> inward refraction with per-channel dispersion -> vibrancy -> adaptive tint.
+// The rim light is drawn separately at full resolution (glass_rim.agsl). Output is premultiplied, transparent
+// outside the shape.
+
+uniform shader backdrop;   // the blurred content behind the glass, in this layer's pixels
+uniform float2 size;       // surface size, layer px
+uniform float2 inset;      // the surface's top-left inside the layer (the blur margin), layer px
+uniform float radius;      // corner radius, layer px
+uniform float bevel;       // width of the bevelled rim, layer px
+uniform float refractPx;   // displacement at the rim, layer px (inward)
+uniform float dispersion;  // per-channel refraction spread
+uniform float saturation;  // vibrancy (1 = unchanged)
+uniform float frost;       // adaptive tint amount (0 = clear glass)
+uniform float brightness;  // -1..1, 0 = unchanged
+uniform float focusTint;   // extra white when focused
+
+half3 finish(half3 col) {
+    half lum = dot(col, half3(0.2126, 0.7152, 0.0722));
+    half satNow = max(col.r, max(col.g, col.b)) - min(col.r, min(col.g, col.b));
+    half room = 1.0 - smoothstep(0.2, 0.85, satNow);
+    half hl = 1.0 - smoothstep(0.75, 0.98, lum);
+    half amount = 1.0 + (half(saturation) - 1.0) * mix(0.3, 1.0, room * hl);
+    col = clamp(mix(half3(lum), col, amount), 0.0, 1.0);
+    // Adaptive tint: lighter over dark content, darker over light content.
+    half e = smoothstep(0.35, 0.75, dot(col, half3(0.2126, 0.7152, 0.0722)));
+    col = mix(col, half3(1.0 - e), clamp(half(frost) * (1.0 + 0.57 * e) + half(focusTint), 0.0, 1.0));
+    half b = half(brightness);
+    return b >= 0.0 ? mix(col, half3(1.0), b) : col * (1.0 + b);
+}
+
+half4 main(float2 fragCoord) {
+    float2 coord = fragCoord - inset;
+    float2 halfSize = size * 0.5;
+    float2 p = coord - halfSize;
+    float r = min(radius, min(halfSize.x, halfSize.y));
+    float2 q = abs(p) - halfSize + r;
+    float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+
+    half cov = half(clamp(0.5 - d / 1.5, 0.0, 1.0));
+    if (cov <= 0.004) {
+        return half4(0.0);
+    }
+    float depth = -d;
+
+    // Flat interior: nothing bends, one sample.
+    if (depth >= bevel) {
+        return half4(finish(backdrop.eval(fragCoord).rgb), 1.0);
+    }
+
+    float2 n = (q.x > 0.0 && q.y > 0.0) ? normalize(q) : (q.x > q.y ? float2(1.0, 0.0) : float2(0.0, 1.0));
+    n *= float2(p.x < 0.0 ? -1.0 : 1.0, p.y < 0.0 ? -1.0 : 1.0);
+    float t = clamp(depth / max(bevel, 1.0), 0.0, 1.0);
+    float u = 1.0 / (1.0 + 4.0 * t);
+    float slope = max((u * u - 0.04) / 0.96, 0.0);
+
+    float2 offset = n * (-slope * refractPx);
+    half3 col;
+    if (slope * refractPx > 0.05) {
+        col = half3(
+            backdrop.eval(fragCoord + offset * (1.0 - dispersion * slope)).r,
+            backdrop.eval(fragCoord + offset).g,
+            backdrop.eval(fragCoord + offset * (1.0 + dispersion * slope)).b);
+    } else {
+        col = backdrop.eval(fragCoord).rgb;
+    }
+    return half4(finish(col) * cov, cov);
+}

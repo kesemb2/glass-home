@@ -1,0 +1,41 @@
+// Live liquid glass, the rim light (AGSL, Android 13+), drawn at full resolution over the body as a stroke along
+// the edge, so only the edge band is shaded. Same light model as glass_lens.agsl: two equal lobes (the lit side
+// and the inner reflection opposite), a 2 px hairline just inside the edge, and a soft glow inward on the lit side.
+// Output: premultiplied white, its alpha the amount of light.
+
+uniform float2 size;       // surface size, px
+uniform float radius;      // corner radius, px
+uniform float bevel;       // width of the bevelled rim, px
+uniform float2 lightDir;   // direction the light travels, unit, y down
+uniform float spec;        // strength
+uniform float rimBandMax;  // max width of the lit-side glow, px
+
+half lobe(half x) {
+    x = max(x, 0.0);
+    half x2 = x * x;
+    return x2 * x2 * sqrt(x);
+}
+
+half4 main(float2 coord) {
+    float2 halfSize = size * 0.5;
+    float2 p = coord - halfSize;
+    float r = min(radius, min(halfSize.x, halfSize.y));
+    float2 q = abs(p) - halfSize + r;
+    float d = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+    half cov = half(clamp(0.5 - d / 1.5, 0.0, 1.0));
+    float depth = -d;
+    float bandW = clamp(bevel * 0.3, 2.0, rimBandMax);
+    if (cov <= 0.004 || depth >= bandW + 4.0) {
+        return half4(0.0);
+    }
+    float2 n = (q.x > 0.0 && q.y > 0.0) ? normalize(q) : (q.x > q.y ? float2(1.0, 0.0) : float2(0.0, 1.0));
+    n *= float2(p.x < 0.0 ? -1.0 : 1.0, p.y < 0.0 ? -1.0 : 1.0);
+    half facing = half(dot(n, -lightDir));
+    half lobeF = lobe(facing);
+    half lobeB = lobe(-facing);
+    half g = half(clamp(1.0 - (depth - 3.0) / bandW, 0.0, 1.0));
+    half glow = half(clamp((depth - 1.0) / 2.0, 0.0, 1.0)) * g * sqrt(g) * cov;
+    half hair = half(clamp(1.0 - abs(1.0 - depth) / 2.0, 0.0, 1.0)) * cov;
+    half v = clamp((hair * 0.70 * (lobeF + lobeB) + glow * 0.10 * lobeF) * half(spec), 0.0, 1.0);
+    return half4(v, v, v, v);
+}

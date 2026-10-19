@@ -49,8 +49,8 @@
     <string name="settings_phone_apps_hint">Apps made for phones and tablets, without a TV version</string>
     <string name="settings_auto_advance">Continue Watching auto-advance</string>
     <string name="settings_auto_advance_hint">Move to the next title every 8 seconds</string>
-    <string name="settings_glass">Glass refraction</string>
-    <string name="settings_glass_hint">Off uses simpler, flat glass</string>
+    <string name="settings_glass">Glass</string>
+    <string name="settings_glass_hint">Blur, refraction, brightness and transparency</string>
     <string name="settings_perf">Performance overlay</string>
     <string name="settings_perf_hint">Frame rate and memory in the corner</string>
     <string name="settings_hidden">Hidden apps</string>
@@ -75,4 +75,16 @@
     <string name="size_medium">Medium</string>
     <string name="size_small">Small</string>
     <string name="size_extra_small">Extra small</string>
+
+    <!-- Settings: glass -->
+    <string name="glass_live">Live glass</string>
+    <string name="glass_live_hint">Follows what is behind it in real time</string>
+    <string name="glass_blur">Blur</string>
+    <string name="glass_blur_hint">Of what is behind the glass</string>
+    <string name="glass_refraction">Refraction</string>
+    <string name="glass_refraction_hint">How strongly the edges bend the light</string>
+    <string name="glass_brightness">Brightness</string>
+    <string name="glass_transparency">Transparency</string>
+    <string name="glass_transparency_hint">100% is clear glass, lower is more frosted</string>
+    <string name="glass_reset">Reset glass</string>
 </resources>

@@ -47,8 +47,8 @@
     <string name="settings_phone_apps_hint">אפליקציות לטלפון ולטאבלט שאין להן גרסת טלוויזיה</string>
     <string name="settings_auto_advance">מעבר אוטומטי ב״המשך צפייה״</string>
     <string name="settings_auto_advance_hint">מעבר לכותר הבא כל 8 שניות</string>
-    <string name="settings_glass">שבירת אור בזכוכית</string>
-    <string name="settings_glass_hint">כשכבוי, הזכוכית פשוטה ושטוחה יותר</string>
+    <string name="settings_glass">זכוכית</string>
+    <string name="settings_glass_hint">טשטוש, שבירת אור, בהירות ושקיפות</string>
     <string name="settings_perf">מד ביצועים</string>
     <string name="settings_perf_hint">קצב פריימים וזיכרון בפינת המסך</string>
     <string name="settings_hidden">אפליקציות מוסתרות</string>
@@ -71,4 +71,16 @@
     <string name="size_medium">בינוני</string>
     <string name="size_small">קטן</string>
     <string name="size_extra_small">קטן מאוד</string>
+
+    <!-- Settings: glass -->
+    <string name="glass_live">זכוכית חיה</string>
+    <string name="glass_live_hint">מגיבה בזמן אמת למה שמאחוריה</string>
+    <string name="glass_blur">טשטוש</string>
+    <string name="glass_blur_hint">של מה שמאחורי הזכוכית</string>
+    <string name="glass_refraction">שבירת אור</string>
+    <string name="glass_refraction_hint">כמה חזק השוליים מכופפים את האור</string>
+    <string name="glass_brightness">בהירות</string>
+    <string name="glass_transparency">שקיפות</string>
+    <string name="glass_transparency_hint">100% זכוכית צלולה, פחות זה יותר חלבי</string>
+    <string name="glass_reset">איפוס הזכוכית</string>
 </resources>

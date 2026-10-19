@@ -30,19 +30,30 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
@@ -55,7 +66,10 @@ import androidx.compose.ui.unit.dp
 import io.github.kesemb2.glasshome.image.FastBlur
 import io.github.kesemb2.glasshome.ui.components.MenuRow
 import io.github.kesemb2.glasshome.ui.glass.GlassBackdrop
+import io.github.kesemb2.glasshome.ui.glass.LiquidGlass
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassBackdrop
+import io.github.kesemb2.glasshome.ui.glass.LocalGlassLive
+import io.github.kesemb2.glasshome.ui.glass.LocalGlassStyle
 import io.github.kesemb2.glasshome.ui.glass.glass
 import io.github.kesemb2.glasshome.ui.glass.glassShadow
 import io.github.kesemb2.glasshome.ui.motion.LocalFocusAllowed
@@ -68,6 +82,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -124,11 +139,18 @@ object ScreenSnapshot {
     }
 }
 
+/** The whole home screen, recorded (see HomeScreen): live overlays draw it, blurred, as their background. */
+val LocalBaseLayer = staticCompositionLocalOf<GraphicsLayer?> { null }
+
 /**
- * A full-screen layer over the home screen: the blurred snapshot, darkened by [dim], with glass inside it
- * refracting that snapshot. Only the [top] layer can take focus. The layer stays invisible until its snapshot is
- * taken (so the snapshot never contains the layer itself), then fades in; [content] gets the appear progress.
- * Once it is fully shown it hides everything under it ([onCovering]), which then costs nothing to draw.
+ * A full-screen layer over the home screen: the screen behind it blurred and darkened by [dim], with glass inside
+ * it refracting that. Only the [top] layer can take focus.
+ *
+ * Live (live glass on, Android 13+): the background is the recorded home screen ([LocalBaseLayer]) drawn at a
+ * quarter of the resolution and blurred every frame it changes, so whatever happens behind the overlay (a setting
+ * taking effect) shows through it at once. Otherwise: one snapshot taken when the layer opens (the layer stays
+ * invisible until then, so it never captures itself). Once fully shown it hides the screen under it ([onCovering]),
+ * which then costs nothing to draw there. [content] gets the appear progress.
  */
 @Composable
 fun OverlayLayer(
@@ -138,18 +160,28 @@ fun OverlayLayer(
     content: @Composable BoxScope.(appear: () -> Float) -> Unit,
 ) {
     val view = LocalView.current
+    val context = LocalContext.current
+    val style = LocalGlassStyle.current
+    val base = LocalBaseLayer.current
+    // Decided once, so the layer keeps its background while live glass is switched in Settings.
+    val live = remember { style.live && base != null && LiquidGlass.liveSources(context) != null }
     val backdrop = remember { GlassBackdrop() }
+    val background = rememberGraphicsLayer()
+    val behind: DrawScope.() -> Unit = remember(background) { { drawLayer(background) } }
+    val darken = remember(dim) { ColorFilter.lighting(multiply = Color(1f - dim, 1f - dim, 1f - dim), add = Color.Black) }
     var snapshot by remember { mutableStateOf<ImageBitmap?>(null) }
     var ready by remember { mutableStateOf(false) }
     val appear = remember { Animatable(0f) }
     val covering = rememberUpdatedState(onCovering)
     var covered by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        snapshot = ScreenSnapshot.capture(view, dim)
-        backdrop.set(snapshot)
+        if (!live) {
+            snapshot = ScreenSnapshot.capture(view, dim)
+            backdrop.set(snapshot)
+        }
         ready = true
         appear.animateTo(1f, Springs.overlay())
-        if (snapshot != null) {
+        if (live || snapshot != null) {
             covered = true
             covering.value(true)
         }
@@ -157,7 +189,11 @@ fun OverlayLayer(
     DisposableEffect(Unit) {
         onDispose { if (covered) covering.value(false) }
     }
-    CompositionLocalProvider(LocalGlassBackdrop provides backdrop, LocalFocusAllowed provides top) {
+    CompositionLocalProvider(
+        LocalGlassBackdrop provides backdrop,
+        LocalGlassLive provides if (live) behind else null,
+        LocalFocusAllowed provides top,
+    ) {
         Box(
             Modifier
                 .fillMaxSize()
@@ -166,6 +202,24 @@ fun OverlayLayer(
                     compositingStrategy = CompositingStrategy.ModulateAlpha
                 }
                 .drawBehind {
+                    if (live && base != null) {
+                        val k = LIVE_SCALE
+                        background.record(
+                            this,
+                            layoutDirection,
+                            IntSize(ceil(size.width / k).toInt(), ceil(size.height / k).toInt()),
+                        ) {
+                            scale(1f / k, 1f / k, pivot = Offset.Zero) { drawLayer(base) }
+                        }
+                        val blur = LIVE_BLUR.toPx() / k
+                        background.renderEffect = BlurEffect(blur, blur, TileMode.Clamp)
+                        background.colorFilter = darken
+                        background.pivotOffset = Offset.Zero
+                        background.scaleX = k
+                        background.scaleY = k
+                        drawLayer(background)
+                        return@drawBehind
+                    }
                     val image = snapshot
                     if (image != null) {
                         drawImage(
@@ -182,6 +236,10 @@ fun OverlayLayer(
         }
     }
 }
+
+/** Live overlay backgrounds are rendered at 1/4 of the screen's resolution, then blurred by this much. */
+private const val LIVE_SCALE = 4f
+private val LIVE_BLUR: Dp = 20.dp
 
 @Immutable
 data class MenuAction(@DrawableRes val icon: Int, val label: String, val onClick: () -> Unit)

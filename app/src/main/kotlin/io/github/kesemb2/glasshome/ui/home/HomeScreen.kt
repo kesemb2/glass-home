@@ -30,8 +30,12 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -63,6 +67,8 @@ import io.github.kesemb2.glasshome.ui.debug.PerfOverlay
 import io.github.kesemb2.glasshome.ui.glass.GlassBackdrop
 import io.github.kesemb2.glasshome.ui.glass.GlassShade
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassBackdrop
+import io.github.kesemb2.glasshome.ui.glass.LocalGlassLive
+import io.github.kesemb2.glasshome.ui.glass.LocalGlassStyle
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassScroll
 import io.github.kesemb2.glasshome.ui.hero.GRID_DIM
 import io.github.kesemb2.glasshome.ui.hero.HeroScreen
@@ -73,6 +79,7 @@ import io.github.kesemb2.glasshome.ui.home.HomeNav.Companion.SETTINGS
 import io.github.kesemb2.glasshome.ui.home.HomeNav.Companion.SHELF_PREFIX
 import io.github.kesemb2.glasshome.ui.motion.LocalFocusAllowed
 import io.github.kesemb2.glasshome.ui.overlay.AnchoredMenu
+import io.github.kesemb2.glasshome.ui.overlay.LocalBaseLayer
 import io.github.kesemb2.glasshome.ui.overlay.OverlayLayer
 import io.github.kesemb2.glasshome.ui.settings.SettingsSheet
 import io.github.kesemb2.glasshome.ui.theme.GlassColors
@@ -234,6 +241,19 @@ private fun HomeContent(
         var coverCount by remember { mutableIntStateOf(0) }
         val onCovering: (Boolean) -> Unit = remember { { covering -> if (covering) coverCount++ else coverCount-- } }
 
+        // Live glass: the backdrop, the scrolling page and the whole screen are recorded into layers (display lists,
+        // not pixels) that glass and overlays draw again, blurred, behind themselves.
+        val backdropLayer = rememberGraphicsLayer()
+        val pageLayer = rememberGraphicsLayer()
+        val baseLayer = rememberGraphicsLayer()
+        val behindPage: DrawScope.() -> Unit = remember(backdropLayer) { { drawLayer(backdropLayer) } }
+        val behindTopBar: DrawScope.() -> Unit = remember(backdropLayer, pageLayer) {
+            {
+                drawLayer(backdropLayer)
+                drawLayer(pageLayer)
+            }
+        }
+
         // Remembered, so focus moving elsewhere does not recompose the hero.
         val heroFocus = remember(nav, view) {
             Modifier
@@ -249,14 +269,18 @@ private fun HomeContent(
                 }
         }
 
-        CompositionLocalProvider(LocalCardSize provides cardSize) {
+        CompositionLocalProvider(LocalCardSize provides cardSize, LocalGlassStyle provides settings.glassStyle) {
         CompositionLocalProvider(LocalFocusAllowed provides !overlaysOpen) {
           Box(
               Modifier
                   .fillMaxSize()
-                  .graphicsLayer { alpha = if (coverCount > 0) 0f else 1f },
+                  // Recorded for overlays; while one fully covers the screen it is not drawn here at all.
+                  .drawWithContent {
+                      baseLayer.record { this@drawWithContent.drawContent() }
+                      if (coverCount == 0) drawLayer(baseLayer)
+                  },
           ) {
-            CompositionLocalProvider(LocalGlassScroll provides glassScroll) {
+            CompositionLocalProvider(LocalGlassScroll provides glassScroll, LocalGlassLive provides behindPage) {
                 HeroScreen(
                     state = hero,
                     autoAdvance = resumed && settings.heroAutoAdvance && !overlaysOpen,
@@ -267,6 +291,7 @@ private fun HomeContent(
                     logoScale = settings.logoPercent / 100f,
                     textScale = settings.textPercent / 100f,
                     gridGlass = gridGlass,
+                    backdropLayer = backdropLayer,
                     focusModifier = heroFocus,
                     onPlay = onPlay,
                     onDismiss = controller::dismiss,
@@ -274,13 +299,18 @@ private fun HomeContent(
                 )
             }
 
-            // The page that scrolls: the favorites shelf at the bottom of the hero, the app grid below it.
+            // The page that scrolls: the favorites shelf at the bottom of the hero, the app grid below it. Recorded
+            // (in screen coordinates) for the glass of the top bar, which floats over it.
             Box(
                 Modifier
                     .fillMaxSize()
+                    .drawWithContent {
+                        pageLayer.record { this@drawWithContent.drawContent() }
+                        drawLayer(pageLayer)
+                    }
                     .offset { IntOffset(0, -camera.roundToInt()) },
             ) {
-              CompositionLocalProvider(LocalGlassScroll provides glassScroll) {
+              CompositionLocalProvider(LocalGlassScroll provides glassScroll, LocalGlassLive provides behindPage) {
                 FavoritesShelf(
                     apps = view.favorites,
                     visuals = apps.visuals,
@@ -351,7 +381,8 @@ private fun HomeContent(
               }
             }
 
-            // Fixed at the top: settings and the clock.
+            // Fixed at the top: settings and the clock, their glass over the page and the backdrop.
+            CompositionLocalProvider(LocalGlassLive provides behindTopBar) {
             Row(
                 Modifier
                     .align(Alignment.TopEnd)
@@ -372,6 +403,7 @@ private fun HomeContent(
                 Spacer(Modifier.width(Spacing.M))
                 ClockPill()
             }
+            }
 
             if (moving != null) {
                 MoveHint(
@@ -383,6 +415,7 @@ private fun HomeContent(
           }
         }
 
+        CompositionLocalProvider(LocalBaseLayer provides baseLayer) {
         nav.overlays.forEachIndexed { i, overlay ->
             key(overlay.id) {
                 val top = i == nav.overlays.lastIndex
@@ -399,6 +432,7 @@ private fun HomeContent(
                     )
                 }
             }
+        }
         }
 
         if (settings.perfOverlay) {

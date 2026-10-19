@@ -21,6 +21,8 @@ uniform float spec;        // rim-light strength
 uniform float rimBandMax;  // max width of the lit-side glow, px
 uniform float saturation;  // vibrancy (1 = unchanged)
 uniform float focusTint;   // extra white when focused
+uniform float frost;       // adaptive tint amount (0 = clear glass)
+uniform float brightness;  // -1..1, 0 = unchanged
 uniform float2 origin;     // this surface's top-left on screen, px
 uniform float4 shadeX;     // screen scrim, horizontal ramp: (from x, to x, alpha at from, even darkening)
 uniform float4 shadeY;     // screen scrim, vertical ramp: (from y, to y, alpha at to, 0)
@@ -42,7 +44,9 @@ half3 finish(half3 col) {
     half amount = 1.0 + (half(saturation) - 1.0) * mix(0.3, 1.0, room * hl);
     col = clamp(mix(half3(lum), col, amount), 0.0, 1.0);
     half e = smoothstep(0.35, 0.75, dot(col, half3(0.2126, 0.7152, 0.0722)));
-    return mix(col, half3(1.0 - e), 0.14 + 0.08 * e + half(focusTint));
+    col = mix(col, half3(1.0 - e), clamp(half(frost) * (1.0 + 0.57 * e) + half(focusTint), 0.0, 1.0));
+    half b = half(brightness);
+    return b >= 0.0 ? mix(col, half3(1.0), b) : col * (1.0 + b);
 }
 
 // pow(x, 4.5) for x >= 0, without pow.
