@@ -52,8 +52,11 @@ screen uses. Apps decide what they publish there.
 - **Hold OK** on any app or folder for its menu: move, favorites, folders, hide, app info.
 - **Move**: choose Move, then use the arrows; OK or Back when done.
 - **Folders**: hold OK on an app → Add to Folder → New Folder (or an existing one). Open a folder with OK.
-- **Settings** (gear next to the clock): show phone apps, Continue Watching auto-advance, glass refraction,
+- **Settings** (gear next to the clock): language (as on the TV, Hebrew or English), app size, logo size, details
+  text size (‹ › on the remote changes them), show phone apps, Continue Watching auto-advance, glass refraction,
   performance overlay, hidden apps (to show them again) and About (version, TMDB notice).
+- **Continue Watching** shows the title's logo and episode line; the synopsis and time left appear when Play is
+  focused.
 
 ## Budgets
 

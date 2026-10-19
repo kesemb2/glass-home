@@ -50,11 +50,13 @@ content titles) renders in it while digits and Latin stay in Inter.
 ## Spacing and shape
 
 - Spacing scale: 4, 8, 12, 16, 20, 24, 32, 40, 48 dp.
+- **Sizes are settings** (Settings): app size 5–8 cards per row (default 6), logo 50–100% (default 70%), details
+  text 80–130% (default 100%). Card, shelf and hero geometry below are for the chosen size.
 - Corner radii: app card **16 dp**; glass pill **fully rounded**; favorites shelf **28 dp**; menus and folders
   **24 dp**. Corners are continuous (`ContinuousRoundedShape`): each corner starts 1.5 × radius from the vertex
   and eases in with one cubic, so curvature ramps up from zero instead of jumping like a circular arc.
-- App card: 16:9, **160 × 90 dp with 16 dp gaps** in a 5-column grid (5 × 160 + 4 × 16 = 864 dp, the full content
-  width). Chosen over the brief's ~200 × 112 dp, which does not fit 5 columns.
+- App card: 16:9, 16 dp gaps, always spanning the 864 dp content width: 5 per row = 160 × 90 dp, 6 = 131 × 74 dp
+  (default), 7 = 110 × 62 dp, 8 = 94 × 53 dp.
 - App card fallback (no TV banner): the icon (44 dp) and the app name (`caption`) on a fill of the icon's dominant
   colour. The colour is the most common 4-bit colour bin, colourful pixels weighted above greys (so a brand colour
   beats a white background), scaled to an HSV value of 0.22–0.52 so white text reads on it. It is computed once per
@@ -94,7 +96,11 @@ bright at the top-start corner, and a faint reflection rim at the bottom-end cor
 
 Both paths fill the shape's path, so edges stay anti-aliased on any shape.
 
-**Cost on the Mali-G31.** The first stage-2 build ran the lens for every glass surface on every frame, whatever
+**Cost on the S905X4.** Two limits, both measured with the performance overlay on the TV: the Mali-G31's shader
+throughput and, at 1080p, memory bandwidth (each full-screen layer is ~8 MB read and written per frame; about
+four fit in a 60 fps frame).
+
+**Glass shader.** The first stage-2 build ran the lens for every glass surface on every frame, whatever
 changed on screen, which held the TV at 8–15 fps. Now:
 
 - each surface renders into a cached offscreen layer per backdrop image, re-rendered only when its image,
@@ -104,7 +110,14 @@ changed on screen, which held the TV at 8–15 fps. Now:
   and rim light only in the bevel band; the normal is analytic (one distance-field evaluation, not five), there is
   no `pow`, and colour math is half precision. Output is the same as before (max difference 2/255).
 
-The shader runs only when a frame is drawn; an idle screen draws nothing. Outer shadow: black 35%, via the focus lift or
+The shader runs only when a frame is drawn; an idle screen draws nothing. Glass on the scrolling page (Play, page
+dots, shelf) samples the backdrop as if the page were at rest, so the camera moving does not render it again on
+every frame (the page only rests where that is exact, or with it off screen); grid glass has its own backdrop.
+
+**Full-screen passes.** The hero is the backdrop plus one scrim pass (both scrims baked into one small bitmap drawn
+stretched), three during an item change. The grid backdrop is one pass (darkened by a colour filter) and the hero
+backdrop is not drawn under it. An overlay's dim is baked into its snapshot, and once the overlay is fully shown
+the screen under it is not drawn at all. Outer shadow: black 35%, via the focus lift or
 `glassShadow` (6–24 dp).
 
 Over the app grid the backdrop is replaced by a far more blurred version (192 × 108 px, box-blur radius 3), and
@@ -169,16 +182,18 @@ Springs everywhere; never linear tweens.
 
 The page, top to bottom (960 × 540 dp screen):
 
-- **Hero** (one screen high). Start-aligned text block ending 173 dp above the bottom, over a start-side and a
-  bottom scrim: source app (20 dp icon + caption) → logo (max 380 × 96 dp; title in `display` when there is none)
-  → metadata (`callout`, secondary) → synopsis (`body`, 85% white, max 2 lines, 520 dp) → 140 dp progress bar with
-  "42 min left" (`caption`) → glass Play button ("Resume" when there is progress). Page dots: glass pill at the
-  end side, level with Play.
-- **Favorites shelf**: a glass tray (28 dp corners) 896 × 122 dp, 27 dp above the bottom, holding five 160 × 90 dp
-  cards aligned with the grid columns. More than five scroll a card at a time; cards outside the window fade out
-  rather than being clipped, so the focused card's lift is never cut. No labels (banners carry the name).
-- **App grid**: starts 80 dp below the hero (so no part of the shelf shows above the grid); 5 columns of 160 × 90 dp cards, 16 dp apart, row pitch 130 dp; the
-  focused card's name appears 12 dp below it. On screen the first row sits 96 dp from the top.
+- **Hero** (one screen high). Start-aligned text block ending 24 dp above the shelf, over a start-side and a bottom
+  scrim: logo (max 380 × 96 dp × logo size; the title in `display` × logo size when there is none) → the episode or
+  movie line (14 sp × text size, secondary) → glass Play button ("Resume" when there is progress). Only while Play
+  is focused, the synopsis (14/19 sp × text size, 80% white, max 2 lines, 480 dp) and a 110 dp × 3 dp progress bar
+  with "42 min left" (12 sp) expand in between (spring, fade). The source app is not shown. Page dots: glass pill
+  at the end side, level with Play.
+- **Favorites shelf**: a glass tray (28 dp corners) 896 dp wide and one card + 32 dp high, 27 dp above the bottom,
+  holding one row of cards aligned with the grid columns. More scroll a card at a time; cards outside the window
+  fade out rather than being clipped, so the focused card's lift is never cut. No labels (banners carry the name).
+- **App grid**: starts 80 dp below the hero (so no part of the shelf shows above the grid); cards 16 dp apart, row
+  pitch card + 36 dp; the focused card's name appears 10 dp below it. On screen the first row sits 96 dp from the
+  top.
 - **Fixed top bar**: round glass settings button (34 dp) and the clock pill at the top-end corner.
 
 Focus moves geometrically, with explicit links where the layout needs them: Down from Play → the last focused

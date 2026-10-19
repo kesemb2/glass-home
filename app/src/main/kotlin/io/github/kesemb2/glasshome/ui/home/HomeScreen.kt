@@ -308,7 +308,8 @@ private fun HomeContent(
                         },
                 )
 
-                CompositionLocalProvider(LocalGlassBackdrop provides gridGlass) {
+                // Grid glass refracts where it really is: the grid scrolls within the grid, where the camera rests.
+                CompositionLocalProvider(LocalGlassBackdrop provides gridGlass, LocalGlassScroll provides null) {
                 CardGrid(
                     items = view.grid,
                     modifier = Modifier
