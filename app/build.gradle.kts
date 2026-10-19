@@ -6,7 +6,7 @@ plugins {
 }
 
 // Build identity. CI passes the GitHub run number, so every build installs over the previous one.
-val baseVersion = "0.0"
+val baseVersion = "0.1"
 val buildNumber = System.getenv("BUILD_NUMBER")?.toIntOrNull() ?: 1
 val gitSha = System.getenv("GITHUB_SHA")?.take(7) ?: "local"
 
@@ -100,6 +100,12 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.ui)
     implementation(libs.activity.compose)
+    implementation(libs.coil.core)
+    implementation(libs.coil.network.okhttp)
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
+    // Android's org.json is a stub on the JVM; unit tests use the reference implementation.
+    testImplementation(libs.org.json)
 }

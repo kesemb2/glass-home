@@ -1,21 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="stage_title">מסלול ההתקנה עובד</string>
-    <string name="stage_subtitle">גרסת שלב 0. מסך הבית האמיתי יגיע בשלבים הבאים.</string>
-    <string name="section_display">מסך</string>
-    <string name="section_device">מכשיר</string>
-    <string name="section_build">גרסה</string>
-    <string name="label_ui_surface">משטח הממשק</string>
-    <string name="label_display_mode">מצב תצוגה</string>
-    <string name="label_density">צפיפות</string>
-    <string name="label_android">Android</string>
-    <string name="label_model">דגם</string>
-    <string name="label_memory">זיכרון</string>
-    <string name="label_app_memory">זיכרון האפליקציה (PSS)</string>
-    <string name="label_version">גרסה</string>
-    <string name="label_tmdb">טוקן TMDB</string>
-    <string name="tmdb_present">מוגדר</string>
-    <string name="tmdb_missing">עדיין לא מוגדר</string>
-    <string name="button_refresh">רענון</string>
-    <string name="button_app_info">פרטי האפליקציה</string>
+    <!-- Hero -->
+    <string name="hero_play">נגן</string>
+    <string name="hero_resume">המשך</string>
+    <string name="hero_season">עונה %1$d</string>
+    <string name="hero_episode">פרק %1$d</string>
+    <string name="hero_left_min">נותרו %1$d דק׳</string>
+    <string name="hero_left_h">נותרו %1$d שע׳</string>
+    <string name="hero_left_h_min">נותרו %1$d שע׳ %2$d דק׳</string>
+    <string name="hero_duration_min">%1$d דק׳</string>
+    <string name="hero_duration_h">%1$d שע׳</string>
+    <string name="hero_duration_h_min">%1$d שע׳ %2$d דק׳</string>
+    <string name="hero_remove">הסרה מ״המשך צפייה״</string>
+
+    <!-- Hero empty states -->
+    <string name="empty_access_title">״המשך צפייה״ צריך הרשאה</string>
+    <string name="empty_access_body">אפשר ל-Glass Home לקרוא את רשימות הצפייה של הטלוויזיה, כדי להציג את מה שאתה צופה בו.</string>
+    <string name="empty_allow">אפשר</string>
+    <string name="empty_blocked_title">״המשך צפייה״ לא זמין</string>
+    <string name="empty_blocked_body">הטלוויזיה הזו לא משתפת את רשימת ״המשך צפייה״ עם משגרים אחרים.</string>
+    <string name="empty_none_title">אין עדיין מה להמשיך</string>
+    <string name="empty_none_body">התחל לצפות במשהו באפליקציה שתומכת ב״המשך צפייה״, והוא יופיע כאן.</string>
+    <string name="diag_rows">שורות גלויות ברשימה: %1$d</string>
 </resources>

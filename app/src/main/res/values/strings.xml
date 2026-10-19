@@ -1,22 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name" translatable="false">Glass Home</string>
-    <string name="stage_title">Install pipeline works</string>
-    <string name="stage_subtitle">Stage 0 build. The real home screen arrives in the next stages.</string>
-    <string name="section_display">Display</string>
-    <string name="section_device">Device</string>
-    <string name="section_build">Build</string>
-    <string name="label_ui_surface">UI surface</string>
-    <string name="label_display_mode">Display mode</string>
-    <string name="label_density">Density</string>
-    <string name="label_android">Android</string>
-    <string name="label_model">Model</string>
-    <string name="label_memory">Memory</string>
-    <string name="label_app_memory">App memory (PSS)</string>
-    <string name="label_version">Version</string>
-    <string name="label_tmdb">TMDB token</string>
-    <string name="tmdb_present">Configured</string>
-    <string name="tmdb_missing">Not configured yet</string>
-    <string name="button_refresh">Refresh</string>
-    <string name="button_app_info">App info</string>
+
+    <!-- Hero -->
+    <string name="hero_play">Play</string>
+    <string name="hero_resume">Resume</string>
+    <string name="hero_season">S%1$d</string>
+    <string name="hero_episode">E%1$d</string>
+    <string name="hero_left_min">%1$d min left</string>
+    <string name="hero_left_h">%1$d h left</string>
+    <string name="hero_left_h_min">%1$d h %2$d min left</string>
+    <string name="hero_duration_min">%1$d min</string>
+    <string name="hero_duration_h">%1$d h</string>
+    <string name="hero_duration_h_min">%1$d h %2$d min</string>
+    <string name="hero_remove">Remove from Continue Watching</string>
+
+    <!-- Hero empty states -->
+    <string name="empty_access_title">Continue Watching needs access</string>
+    <string name="empty_access_body">Allow Glass Home to read your TV listings so it can show what you are watching.</string>
+    <string name="empty_allow">Allow</string>
+    <string name="empty_blocked_title">Continue Watching is not available</string>
+    <string name="empty_blocked_body">This TV does not share its Watch Next list with other launchers.</string>
+    <string name="empty_none_title">Nothing to continue yet</string>
+    <string name="empty_none_body">Start watching something in an app that supports Continue Watching and it will appear here.</string>
+    <string name="diag_rows">Watch Next rows visible: %1$d</string>
 </resources>

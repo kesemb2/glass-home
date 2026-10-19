@@ -9,7 +9,32 @@
         android:name="android.software.leanback"
         android:required="false" />
 
+    <!-- TMDB lookups and artwork. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+        Read access to the system Watch Next list. Which of these the TV's TvProvider defines differs between
+        Android TV builds; the app requests whichever one is a runtime permission on this device.
+    -->
+    <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
+    <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
+    <uses-permission android:name="com.android.providers.tv.permission.READ_WRITE_WATCH_NEXT_PROGRAMS" />
+
+    <!-- Package visibility without QUERY_ALL_PACKAGES: launchable apps and the TV provider. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <provider android:authorities="android.media.tv" />
+    </queries>
+
     <application
+        android:name=".GlassHomeApp"
         android:allowBackup="false"
         android:banner="@drawable/banner"
         android:icon="@mipmap/ic_launcher"
