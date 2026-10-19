@@ -60,37 +60,41 @@ content titles) renders in it while digits and Latin stay in Inter.
 
 Never blur moving content in real time. Every glass surface samples one **glass source** per hero backdrop,
 made once on Coil's decoder thread: centre-crop and downscale to 480 × 270 (1/4 of the UI surface), three box-blur
-passes of radius 2, saturation × 1.35 and brightness × 1.08. It keeps enough structure for refraction to read,
-and it doubles as the instant placeholder while the sharp backdrop decodes. Surfaces cross-fade between the old and
-new source when the hero changes.
+passes of radius 1, saturation × 1.15. It keeps visible structure, so refraction reads, and it doubles as the
+instant placeholder while the sharp backdrop decodes. Surfaces cross-fade between the old and new source when the
+hero changes.
 
-**Liquid path (Android 13+, default; `res/raw/glass_*.agsl`)** — per surface, in this order:
+**Lens path (Android 13+, default; `res/raw/glass_lens.agsl`)** — one shader pass per surface. The optical model
+is adapted from [Liquid Glass Android](https://github.com/QWEA0/Liquid-Glass-Android) by pandadog (MIT):
 
-1. **Lens** (`glass_lens.agsl`): the source seen through a rounded-rectangle lens. The whole surface magnifies
-   by 5%; towards the rim (a band of 38% of the short side) the sample is pulled inward by up to 18% of the short
-   side with a cubic ramp (refraction), red and blue split by 1.6 dp (dispersion), and the rim away from the light
-   is shaded by up to 22%. The rounded-rectangle distance field gives the edge normal.
-2. **Shade**: the screen's own scrims, evaluated in screen space, so glass over a darkened area is darkened too.
-3. **Tint**: white 8% at rest, 16% focused.
-4. **Light** (`glass_specular.agsl`): a 1.5 dp rim lit from the top-start (light vector (∓0.6, −0.8)), a softer
-   reflection on the opposite edge (55%), a 10 dp glow just inside the rim, and a faint sheen over the top half.
-   Focus raises the light by 30%.
+1. Rounded-rectangle distance field → 1.5 px anti-aliased coverage and the outward normal (numeric gradient).
+2. **Bevel profile**: a rim band of `min(48 px, 0.3 × short side)`; inverse-power falloff (exponent 2), so most of
+   the bending sits in the outermost pixels.
+3. **Refraction**: sample inward along the normal by up to `min(160 px, 0.7 × short side × min(1, short side /
+   110 dp))` — the rim shows a compressed mirror of the inner backdrop, the signature of the material. The
+   screen's scrims are refracted with the image (evaluated in screen space).
+4. **Dispersion**: red/blue refract 12% less/more than green along the rim.
+5. **Vibrancy** 1.5: low-saturation colours lifted more than saturated ones, highlights protected.
+6. **Adaptive tint**: lighten towards white by 14% over dark content, darken by up to 22% over light content;
+   focus adds 6% white.
+7. **Rim light** from the same normals: two equal lobes, `pow(±dot(N, −L), 4.5)`, light from the top-start at 30°
+   above horizontal (L = (0.866, 0.5)); a 2 px hairline just inside the edge on both lobes and a ≤ 6 px glow inward
+   on the lit side only; strength 1.25 (× 1.3 when focused). No constant outline.
 
-**Fallback path** (older Android, the "glass refraction" setting off, or if the shaders fail to compile or draw):
-the plain source crop, shade, tint (10% / 18%), an inner top highlight (white 12% → 0 over 40%), a 1 dp rim bright
-at the top-start corner, and a faint reflection rim at the bottom-end corner.
+**Fallback path** (older Android, the "glass refraction" setting off, or if the shader fails to compile or draw):
+the plain source crop, the scrims, tint (10% / 18%), an inner top highlight (white 12% → 0 over 40%), a 1 dp rim
+bright at the top-start corner, and a faint reflection rim at the bottom-end corner.
 
-Both paths fill the shape's path, so edges stay anti-aliased on any shape. The shaders run only when a frame is
+Both paths fill the shape's path, so edges stay anti-aliased on any shape. The shader runs only when a frame is
 drawn (focus and hero transitions); an idle screen draws nothing. Outer shadow: black 35%, via the focus lift or
 `glassShadow` (6–24 dp).
 
 Overlays above the grid (menus, folders) take one downscaled snapshot of the screen when opening, blur it once
 and use it as their source.
 
-Kyant's "Backdrop" library (Apache-2.0, minSdk 21) was evaluated and not adopted: its blur uses `RenderEffect`
-(Android 12+) and its refraction `RuntimeShader` (Android 13+) on a live capture of the content behind each
-surface, i.e. a real-time blur every frame, which this design avoids on the Mali-G31. The lens here is the same
-idea applied to a pre-blurred source.
+The reference library captures and blurs the live content behind each surface every frame (`RenderEffect`, Android
+12+); this app keeps the same optics on a pre-blurred source instead, which suits the Mali-G31. Kyant's "Backdrop"
+library was rejected for the same reason.
 
 ## Motion
 

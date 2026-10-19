@@ -74,6 +74,7 @@ import io.github.kesemb2.glasshome.image.bitmapFor
 import io.github.kesemb2.glasshome.image.rememberImage
 import io.github.kesemb2.glasshome.image.rememberLoadedImage
 import io.github.kesemb2.glasshome.ui.components.GlassButton
+import io.github.kesemb2.glasshome.ui.glass.GlassShade
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassBackdrop
 import io.github.kesemb2.glasshome.ui.glass.glass
 import io.github.kesemb2.glasshome.ui.glass.glassShadow
@@ -182,7 +183,7 @@ fun HeroScreen(
     // Glass surfaces get the same scrims and the same overscan zoom as the backdrop behind them.
     val overscanPx = with(LocalDensity.current) { PARALLAX.toPx() }
     DisposableEffect(glass, rtl, overscanPx) {
-        glass?.shade = { root, origin -> HeroScrim.brushes(root.width, root.height, rtl, origin.x, origin.y) }
+        glass?.shade = { root -> HeroScrim.shade(root.width, root.height, rtl) }
         glass?.zoom = 1f + 2f * overscanPx / metrics.widthPixels
         onDispose {
             glass?.shade = null
@@ -327,7 +328,7 @@ private fun Scrims(rtl: Boolean) {
         Modifier
             .fillMaxSize()
             .drawWithCache {
-                val brushes = HeroScrim.brushes(size.width, size.height, rtl)
+                val brushes = HeroScrim.shade(size.width, size.height, rtl).brushes()
                 onDrawBehind { brushes.forEach { drawRect(it) } }
             },
     )
@@ -335,20 +336,13 @@ private fun Scrims(rtl: Boolean) {
 
 /** Start-side (85% black over 60% of the width) and bottom (90% black over 55% of the height) scrims. */
 private object HeroScrim {
-    /** Brushes in the coordinates of a surface whose origin is at ([dx], [dy]) on a [width] x [height] screen. */
-    fun brushes(width: Float, height: Float, rtl: Boolean, dx: Float = 0f, dy: Float = 0f): List<Brush> = listOf(
-        Brush.horizontalGradient(
-            0f to Color.Black.copy(alpha = 0.85f),
-            0.6f to Color.Transparent,
-            startX = (if (rtl) width else 0f) - dx,
-            endX = (if (rtl) 0f else width) - dx,
-        ),
-        Brush.verticalGradient(
-            0.45f to Color.Transparent,
-            1f to Color.Black.copy(alpha = 0.9f),
-            startY = -dy,
-            endY = height - dy,
-        ),
+    fun shade(width: Float, height: Float, rtl: Boolean) = GlassShade(
+        fromX = if (rtl) width else 0f,
+        toX = if (rtl) width * 0.4f else width * 0.6f,
+        alphaX = 0.85f,
+        fromY = height * 0.45f,
+        toY = height,
+        alphaY = 0.9f,
     )
 }
 

@@ -28,15 +28,15 @@ import kotlin.math.roundToInt
 /** Image requests for the hero, each decoded at the size it is shown at. */
 object HeroImages {
     /**
-     * The glass source: the backdrop at 1/4 of the 1920 x 1080 UI surface, lightly blurred and made a little more
-     * vivid. Liquid glass refracts it, so it keeps some structure instead of being a uniform haze. It is also the
-     * instant placeholder while the sharp backdrop decodes.
+     * The glass source: the backdrop at 1/4 of the 1920 x 1080 UI surface, lightly blurred and slightly more vivid
+     * (the lens shader adds vibrancy on top). Liquid glass refracts it, so it keeps visible structure instead of
+     * being a uniform haze. It is also the instant placeholder while the sharp backdrop decodes.
      */
     const val BLUR_WIDTH = 480
     const val BLUR_HEIGHT = 270
-    private const val BLUR_RADIUS = 2
-    private const val BLUR_SATURATION = 1.35f
-    private const val BLUR_GAIN = 1.08f
+    private const val BLUR_RADIUS = 1
+    private const val BLUR_SATURATION = 1.15f
+    private const val BLUR_GAIN = 1f
 
     const val LOGO_MAX_PX = 600
 
@@ -76,7 +76,7 @@ object HeroImages {
 
     /** Centre-crops to 480 x 270, blurs and saturates. Runs once per backdrop on Coil's decoder thread. */
     private object BlurTransformation : Transformation() {
-        override val cacheKey: String = "glass-source-v2"
+        override val cacheKey: String = "glass-source-v3"
 
         override suspend fun transform(input: Bitmap, size: Size): Bitmap {
             val out = Bitmap.createBitmap(BLUR_WIDTH, BLUR_HEIGHT, Bitmap.Config.ARGB_8888)

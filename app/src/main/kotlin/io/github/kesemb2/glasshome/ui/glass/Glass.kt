@@ -7,6 +7,7 @@ import android.graphics.RuntimeShader
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,7 +47,38 @@ import io.github.kesemb2.glasshome.R
 import io.github.kesemb2.glasshome.ui.theme.ContinuousRoundedShape
 import io.github.kesemb2.glasshome.ui.theme.GlassColors
 import io.github.kesemb2.glasshome.ui.theme.Springs
+import kotlin.math.max
 import kotlin.math.min
+
+/**
+ * Screen-space darkening behind glass (for example the hero's scrims): a horizontal ramp from [alphaX] at [fromX]
+ * to 0 at [toX], and a vertical ramp from 0 at [fromY] to [alphaY] at [toY], stacked like two scrims.
+ */
+@Immutable
+data class GlassShade(
+    val fromX: Float,
+    val toX: Float,
+    val alphaX: Float,
+    val fromY: Float,
+    val toY: Float,
+    val alphaY: Float,
+) {
+    /** The same ramps as brushes, in the coordinates of a surface whose origin is at ([dx], [dy]). */
+    fun brushes(dx: Float = 0f, dy: Float = 0f): List<Brush> = listOf(
+        Brush.horizontalGradient(
+            0f to Color.Black.copy(alpha = alphaX),
+            1f to Color.Transparent,
+            startX = fromX - dx,
+            endX = toX - dx,
+        ),
+        Brush.verticalGradient(
+            0f to Color.Transparent,
+            1f to Color.Black.copy(alpha = alphaY),
+            startY = fromY - dy,
+            endY = toY - dy,
+        ),
+    )
+}
 
 /**
  * The pre-blurred image that glass surfaces "refract". It covers the whole screen (centre-cropped to the
@@ -61,11 +93,8 @@ class GlassBackdrop {
         private set
     internal val fade = Animatable(1f)
 
-    /**
-     * Screen-space layers drawn over the sample (for example the hero's scrims), so a glass surface carries the
-     * same darkening as the screen behind it. Arguments: root size and the surface's origin in the root.
-     */
-    var shade: ((root: Size, origin: Offset) -> List<Brush>)? = null
+    /** The screen's scrims for a given root size, so glass carries the same darkening as the screen behind it. */
+    var shade: ((root: Size) -> GlassShade)? = null
 
     /** How much larger than the screen the visible backdrop is drawn (centred), so samples line up with it. */
     var zoom: Float = 1f
@@ -89,8 +118,8 @@ class GlassBackdrop {
 val LocalGlassBackdrop = staticCompositionLocalOf<GlassBackdrop?> { null }
 
 /**
- * Liquid-glass shaders (AGSL, Android 13+; sources in res/raw). They are compiled once; if that fails, or on
- * older Android, or when [enabled] is off, surfaces fall back to the layered look.
+ * The liquid-glass lens shader (AGSL, Android 13+; source in res/raw/glass_lens.agsl). Compiled once; if that
+ * fails, or on older Android, or when [enabled] is off, surfaces fall back to the layered look.
  */
 object LiquidGlass {
     /** The "glass refraction" setting. */
@@ -99,21 +128,15 @@ object LiquidGlass {
 
     @Volatile
     private var failed = false
-    private var sources: Sources? = null
+    private var source: String? = null
 
-    class Sources(val lens: String, val specular: String)
-
-    fun sources(context: Context): Sources? {
+    fun source(context: Context): String? {
         if (!enabled || failed || Build.VERSION.SDK_INT < 33) return null
-        sources?.let { return it }
+        source?.let { return it }
         return try {
-            val res = context.resources
-            val loaded = Sources(
-                lens = res.openRawResource(R.raw.glass_lens).bufferedReader().use { it.readText() },
-                specular = res.openRawResource(R.raw.glass_specular).bufferedReader().use { it.readText() },
-            )
+            val loaded = context.resources.openRawResource(R.raw.glass_lens).bufferedReader().use { it.readText() }
             compile(loaded)
-            loaded.also { sources = it }
+            loaded.also { source = it }
         } catch (_: Exception) {
             failed = true
             null
@@ -126,22 +149,23 @@ object LiquidGlass {
     }
 
     @RequiresApi(33)
-    private fun compile(sources: Sources) {
-        RuntimeShader(sources.lens)
-        RuntimeShader(sources.specular)
+    private fun compile(source: String) {
+        RuntimeShader(source)
     }
 }
 
 /**
- * Liquid-glass surface, drawn behind the content. With the shaders (Android 13+): the pre-blurred backdrop seen
- * through a lens (slight magnification, refraction and dispersion towards the rim), the screen's scrims, a
- * light tint (stronger when [focus] is 1), and a crisp rim light with a softer reflection on the opposite edge.
- * Without them: the plain backdrop crop, tint, an inner top highlight and a gradient rim. All layers are fills
- * of the shape's path, so edges stay anti-aliased on any [shape].
+ * Liquid-glass surface, drawn behind the content.
+ *
+ * With the lens shader (Android 13+): the pre-blurred backdrop seen through a bevelled rounded-rectangle lens —
+ * strong inward refraction in the outermost pixels (the rim shows a compressed mirror of what is inside), colour
+ * dispersion there, vibrancy, an adaptive tint (lighter over dark content, darker over light), and two symmetric
+ * rim-light lobes; the screen's scrims are refracted with the image. Without it: the plain backdrop crop, the
+ * scrims, a tint (stronger when [focus] is 1), an inner top highlight and gradient rims.
  */
 fun Modifier.glass(shape: Shape, focus: () -> Float = { 0f }, rim: Boolean = true): Modifier = composed {
     val backdrop = LocalGlassBackdrop.current
-    val liquid = LiquidGlass.sources(LocalContext.current)
+    val lens = LiquidGlass.source(LocalContext.current)
     val sampler = remember { BackdropSampler() }
     onGloballyPositioned { sampler.coordinates = it }
         .drawWithCache {
@@ -170,8 +194,8 @@ fun Modifier.glass(shape: Shape, focus: () -> Float = { 0f }, rim: Boolean = tru
             val stroke = Stroke(width = 1.dp.toPx())
             onDrawBehind {
                 val focusAmount = focus().coerceIn(0f, 1f)
-                val lit = backdrop != null && liquid != null &&
-                    sampler.drawLiquid(this, path, backdrop, liquid, radius, rtl, focusAmount)
+                val lit = backdrop != null && lens != null &&
+                    sampler.drawLiquid(this, path, backdrop, lens, radius, focusAmount)
                 if (!lit) {
                     if (backdrop != null) sampler.drawPlain(this, path, backdrop)
                     drawPath(path, lerp(GlassColors.GlassTint, GlassColors.GlassTintFocused, focusAmount))
@@ -195,7 +219,7 @@ internal fun Outline.asPath(): Path = when (this) {
     is Outline.Rectangle -> Path().apply { addRect(rect) }
 }
 
-/** Corner radius for the shaders' rounded-rectangle distance field. */
+/** Corner radius for the shader's rounded-rectangle distance field. */
 private fun Outline.cornerRadius(shape: Shape, density: Density): Float = when (this) {
     is Outline.Rounded -> roundRect.topLeftCornerRadius.x
     is Outline.Rectangle -> 0f
@@ -209,7 +233,7 @@ private class BackdropSampler {
     private val matrix = Matrix()
     private val plainSlots = arrayOfNulls<PlainSlot>(2)
     private var nextPlain = 0
-    private var liquid: Any? = null // LiquidSlots on Android 13+, kept untyped so older runtimes never load it
+    private var liquid: Any? = null // Lenses on Android 13+, kept untyped so older runtimes never load the class
 
     private class PlainSlot(val bitmap: ImageBitmap, val shader: Shader, val brush: ShaderBrush)
 
@@ -239,7 +263,8 @@ private class BackdropSampler {
         val fade = backdrop.fade.value
         if (previous != null && fade < 1f) plain(scope, path, previous, placement, backdrop.zoom, 1f)
         if (current != null) plain(scope, path, current, placement, backdrop.zoom, if (previous != null) fade else 1f)
-        backdrop.shade?.invoke(placement.root, placement.origin)?.forEach { scope.drawPath(path, it) }
+        backdrop.shade?.invoke(placement.root)?.brushes(placement.origin.x, placement.origin.y)
+            ?.forEach { scope.drawPath(path, it) }
     }
 
     private fun plain(scope: DrawScope, path: Path, bitmap: ImageBitmap, placement: Placement, zoom: Float, alpha: Float) {
@@ -254,16 +279,14 @@ private class BackdropSampler {
         scope.drawPath(path, slot.brush, alpha = alpha)
     }
 
-    /** Returns false when the liquid path cannot draw, so the caller falls back to the layered look. */
-    fun drawLiquid(
-        scope: DrawScope, path: Path, backdrop: GlassBackdrop, sources: LiquidGlass.Sources,
-        radius: Float, rtl: Boolean, focus: Float,
-    ): Boolean {
+    /** Returns false when the lens cannot draw (no source image yet, failure), so the caller falls back. */
+    fun drawLiquid(scope: DrawScope, path: Path, backdrop: GlassBackdrop, source: String, radius: Float, focus: Float): Boolean {
         if (Build.VERSION.SDK_INT < 33) return false
+        if (backdrop.current == null) return false
         val placement = placement() ?: return false
         return try {
-            val slots = (liquid as? LiquidSlots) ?: LiquidSlots(sources).also { liquid = it }
-            slots.draw(scope, path, backdrop, placement, radius, rtl, focus)
+            val lenses = (liquid as? Lenses) ?: Lenses(source).also { liquid = it }
+            lenses.draw(scope, path, backdrop, placement, radius, focus)
             true
         } catch (_: Exception) {
             LiquidGlass.disable()
@@ -272,13 +295,13 @@ private class BackdropSampler {
     }
 
     @RequiresApi(33)
-    private inner class LiquidSlots(sources: LiquidGlass.Sources) {
+    private inner class Lenses(source: String) {
         /** A compiled lens; only its input bitmap changes when the hero moves on, so nothing recompiles. */
         private inner class Lens(source: String) {
             val shader = RuntimeShader(source)
             val brush = ShaderBrush(shader)
             var bitmap: ImageBitmap? = null
-            var sample: BitmapShader? = null
+            private var sample: BitmapShader? = null
 
             fun use(image: ImageBitmap): BitmapShader {
                 sample?.takeIf { bitmap === image }?.let { return it }
@@ -294,40 +317,20 @@ private class BackdropSampler {
         }
 
         // Two lenses: the current glass source and, during a cross-fade, the previous one.
-        private val lenses = arrayOf(Lens(sources.lens), Lens(sources.lens))
-        private val specular = RuntimeShader(sources.specular)
-        private val specularBrush = ShaderBrush(specular)
+        private val lenses = arrayOf(Lens(source), Lens(source))
 
-        fun draw(
-            scope: DrawScope, path: Path, backdrop: GlassBackdrop, placement: Placement,
-            radius: Float, rtl: Boolean, focus: Float,
-        ) {
-            val size = scope.size
-            val minSide = min(size.width, size.height)
-            val lightX = if (rtl) 0.6f else -0.6f
+        fun draw(scope: DrawScope, path: Path, backdrop: GlassBackdrop, placement: Placement, radius: Float, focus: Float) {
             val previous = backdrop.previous
-            val current = backdrop.current
+            val current = backdrop.current ?: return
             val fade = backdrop.fade.value
-            val zoom = backdrop.zoom
-            if (previous != null && fade < 1f) {
-                lens(scope, path, previous, current, placement, zoom, size, minSide, radius, lightX, 1f)
-            }
-            if (current != null) {
-                lens(scope, path, current, previous, placement, zoom, size, minSide, radius, lightX, if (previous != null) fade else 1f)
-            }
-            backdrop.shade?.invoke(placement.root, placement.origin)?.forEach { scope.drawPath(path, it) }
-            scope.drawPath(path, lerp(LIQUID_TINT, LIQUID_TINT_FOCUSED, focus))
-            specular.setFloatUniform("size", size.width, size.height)
-            specular.setFloatUniform("radius", radius)
-            specular.setFloatUniform("light", lightX, -0.8f)
-            specular.setFloatUniform("px", scope.density)
-            specular.setFloatUniform("strength", 1f + 0.3f * focus)
-            scope.drawPath(path, specularBrush)
+            val shade = backdrop.shade?.invoke(placement.root)
+            if (previous != null && fade < 1f) lens(scope, path, previous, current, placement, backdrop.zoom, shade, radius, focus, 1f)
+            lens(scope, path, current, previous, placement, backdrop.zoom, shade, radius, focus, if (previous != null) fade else 1f)
         }
 
         private fun lens(
             scope: DrawScope, path: Path, bitmap: ImageBitmap, other: ImageBitmap?, placement: Placement, zoom: Float,
-            size: Size, minSide: Float, radius: Float, lightX: Float, alpha: Float,
+            shade: GlassShade?, radius: Float, focus: Float, alpha: Float,
         ) {
             // Reuse the lens already showing this bitmap, else one not needed by the other cross-fade layer.
             val lens = lenses.firstOrNull { it.bitmap === bitmap }
@@ -335,21 +338,54 @@ private class BackdropSampler {
                 ?: lenses[0]
             val sample = lens.use(bitmap)
             sample.setLocalMatrix(mapBitmap(bitmap, placement, zoom))
+            val shader = lens.shader
             // The runtime shader keeps the child as it was when set, so set it again after moving it.
-            lens.shader.setInputShader("backdrop", sample)
-            lens.shader.setFloatUniform("size", size.width, size.height)
-            lens.shader.setFloatUniform("radius", radius)
-            lens.shader.setFloatUniform("depth", minSide * 0.18f)
-            lens.shader.setFloatUniform("band", minSide * 0.38f)
-            lens.shader.setFloatUniform("zoom", 0.05f)
-            lens.shader.setFloatUniform("chroma", 1.6f * scope.density)
-            lens.shader.setFloatUniform("light", lightX, -0.8f)
+            shader.setInputShader("backdrop", sample)
+
+            // Lens geometry scales with the surface's short side, so small pills are not all rim.
+            val width = scope.size.width
+            val height = scope.size.height
+            val minSide = min(width, height)
+            val reference = REFERENCE_SIDE_DP * scope.density
+            shader.setFloatUniform("size", width, height)
+            shader.setFloatUniform("radius", radius)
+            shader.setFloatUniform("bevel", max(2f, min(BEVEL_MAX_PX, minSide * BEVEL_RATIO)))
+            shader.setFloatUniform("refractPx", min(REFRACT_MAX_PX, REFRACT_RATIO * minSide * min(1f, minSide / reference)))
+            shader.setFloatUniform("falloff", FALLOFF)
+            shader.setFloatUniform("dispersion", DISPERSION)
+            shader.setFloatUniform("lightDir", LIGHT_X, LIGHT_Y)
+            shader.setFloatUniform("spec", SPECULAR * (1f + 0.3f * focus))
+            shader.setFloatUniform("rimBandMax", max(2f, min(RIM_BAND_MAX_PX, minSide * RIM_BAND_RATIO)))
+            shader.setFloatUniform("saturation", VIBRANCY)
+            shader.setFloatUniform("tint", 1f, 1f, 1f, FOCUS_TINT * focus)
+            shader.setFloatUniform("adaptive", 1f)
+            shader.setFloatUniform("origin", placement.origin.x, placement.origin.y)
+            if (shade != null) {
+                shader.setFloatUniform("shadeX", shade.fromX, shade.toX, shade.alphaX, 0f)
+                shader.setFloatUniform("shadeY", shade.fromY, shade.toY, shade.alphaY, 0f)
+            } else {
+                shader.setFloatUniform("shadeX", 0f, 1f, 0f, 0f)
+                shader.setFloatUniform("shadeY", 0f, 1f, 0f, 0f)
+            }
             scope.drawPath(path, lens.brush, alpha = alpha)
         }
     }
 
     private companion object {
-        val LIQUID_TINT = Color.White.copy(alpha = 0.08f)
-        val LIQUID_TINT_FOCUSED = Color.White.copy(alpha = 0.16f)
+        // Lens parameters (px values were tuned against the reference implementation; see DESIGN.md).
+        const val BEVEL_MAX_PX = 48f
+        const val BEVEL_RATIO = 0.3f
+        const val REFRACT_MAX_PX = 160f
+        const val REFRACT_RATIO = 0.7f
+        const val REFERENCE_SIDE_DP = 110f
+        const val FALLOFF = 2f
+        const val DISPERSION = 0.12f
+        const val LIGHT_X = 0.866f
+        const val LIGHT_Y = 0.5f
+        const val SPECULAR = 1.25f
+        const val RIM_BAND_MAX_PX = 6f
+        const val RIM_BAND_RATIO = 0.05f
+        const val VIBRANCY = 1.5f
+        const val FOCUS_TINT = 0.06f
     }
 }

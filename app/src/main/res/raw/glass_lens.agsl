@@ -1,39 +1,108 @@
-// Liquid-glass lens (AGSL, Android 13+). Samples the pre-blurred backdrop through a rounded-rectangle "lens":
-// the whole surface magnifies slightly, and towards the rim the sample is pulled inward (refraction) with a
-// small red/blue split (dispersion). Coordinates are the surface's local pixels.
-uniform shader backdrop;  // screen-sized blurred backdrop, its local matrix maps it onto this surface
-uniform float2 size;      // surface size, px
-uniform float radius;     // corner radius, px
-uniform float depth;      // inward displacement at the rim, px
-uniform float band;       // width of the refracting rim, px
-uniform float zoom;       // overall magnification (0.05 = 5%)
-uniform float chroma;     // red/blue split at the rim, px
-uniform float2 light;     // unit vector towards the light, y down; the far rim is shaded slightly
+// Liquid-glass lens (AGSL, Android 13+), one pass per glass surface.
+//
+// Optical model adapted from "Liquid Glass Android" by pandadog (github.com/QWEA0/Liquid-Glass-Android),
+// MIT License, Copyright (c) 2025-2026 pandadog. Changes: samples a pre-blurred, screen-sized backdrop (no
+// live capture), refracts the screen's scrims along with it, single shape, no touch/press terms.
+//
+// Rounded-rectangle distance field -> outward normal -> bevel profile (inverse-power falloff: most of the
+// bending sits in the outermost pixels, which folds the inner backdrop into a compressed ring at the rim) ->
+// inward refraction with per-channel dispersion -> vibrancy -> tint -> two symmetric rim-light lobes.
+// Coordinates are the surface's local pixels; output is premultiplied, transparent outside the shape.
 
-float sdRoundRect(float2 p, float2 halfSize, float r) {
-    float2 q = abs(p) - halfSize + float2(r, r);
-    return length(max(q, float2(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - r;
+uniform shader backdrop;   // screen-sized blurred backdrop; its local matrix maps it onto this surface
+uniform float2 size;       // surface size, px
+uniform float radius;      // corner radius, px
+uniform float bevel;       // width of the bevelled rim, px
+uniform float refractPx;   // displacement at the rim, px (inward)
+uniform float falloff;     // > 0: inverse-power profile exponent; 0: quadratic bevel
+uniform float dispersion;  // per-channel refraction spread
+uniform float2 lightDir;   // direction the light travels, unit, y down: (0.866, 0.5) = from the top-left
+uniform float spec;        // rim-light strength
+uniform float rimBandMax;  // max width of the lit-side glow, px
+uniform float saturation;  // vibrancy (1 = unchanged)
+uniform float4 tint;       // straight-alpha tint colour, used when adaptive is 0
+uniform float adaptive;    // 1: per-pixel adaptive tint (lighten over dark, darken over light)
+uniform float2 origin;     // this surface's top-left on screen, px
+uniform float4 shadeX;     // screen scrim, horizontal ramp: (from x, to x, alpha at from, 0)
+uniform float4 shadeY;     // screen scrim, vertical ramp: (from y, to y, alpha at to, 0)
+
+float sdRoundedBox(float2 p, float2 b, float r) {
+    float2 q = abs(p) - b + r;
+    return length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - r;
+}
+
+float scrim(float2 s) {
+    float ax = shadeX.z * clamp((s.x - shadeX.y) / (shadeX.x - shadeX.y), 0.0, 1.0);
+    float ay = shadeY.z * clamp((s.y - shadeY.x) / (shadeY.y - shadeY.x), 0.0, 1.0);
+    return 1.0 - (1.0 - ax) * (1.0 - ay);
 }
 
 half4 main(float2 coord) {
     float2 halfSize = size * 0.5;
     float2 p = coord - halfSize;
     float r = min(radius, min(halfSize.x, halfSize.y));
-    float d = sdRoundRect(p, halfSize, r);
-    float2 grad = float2(
-        sdRoundRect(p + float2(1.0, 0.0), halfSize, r) - sdRoundRect(p - float2(1.0, 0.0), halfSize, r),
-        sdRoundRect(p + float2(0.0, 1.0), halfSize, r) - sdRoundRect(p - float2(0.0, 1.0), halfSize, r));
-    float2 n = grad / max(length(grad), 0.0001);
-    float t = clamp(1.0 + d / band, 0.0, 1.0);
-    float bend = t * t * t;
-    float2 uv = coord - p * zoom - n * (bend * depth);
-    half4 base = backdrop.eval(uv);
-    if (bend < 0.002) {
-        return base;
+    float d = sdRoundedBox(p, halfSize, r);
+
+    // Coverage: 1.5 px anti-aliased edge, transparent outside.
+    float cov = clamp(0.5 - d / 1.5, 0.0, 1.0);
+    if (cov <= 0.004) {
+        return half4(0.0);
     }
-    float2 split = n * (bend * chroma);
-    half red = backdrop.eval(uv + split).r;
-    half blue = backdrop.eval(uv - split).b;
-    half shade = half(1.0 - 0.22 * bend * max(-dot(n, light), 0.0));
-    return half4(half3(red, base.g, blue) * shade, base.a);
+
+    // Outward normal from the distance field's gradient.
+    float2 n = float2(
+        sdRoundedBox(p + float2(1.0, 0.0), halfSize, r) - sdRoundedBox(p - float2(1.0, 0.0), halfSize, r),
+        sdRoundedBox(p + float2(0.0, 1.0), halfSize, r) - sdRoundedBox(p - float2(0.0, 1.0), halfSize, r));
+    float nLen = length(n);
+    n = nLen > 0.0001 ? n / nLen : float2(0.0, -1.0);
+
+    // Bevel profile: t = 0 at the rim, 1 where the flat interior starts; slope 1 at the rim, 0 inside.
+    float t = clamp(-d / max(bevel, 1.0), 0.0, 1.0);
+    float slope;
+    if (falloff > 0.001) {
+        float gB = pow(5.0, -falloff);
+        slope = (pow(1.0 + 4.0 * t, -falloff) - gB) / (1.0 - gB);
+    } else {
+        float e = 1.0 - t;
+        slope = e * e;
+    }
+
+    // Inward refraction with dispersion; the scrims behind the glass are refracted with the image.
+    float2 offset = n * (-slope * refractPx);
+    float2 cR = coord + offset * (1.0 - dispersion * slope);
+    float2 cG = coord + offset;
+    float2 cB = coord + offset * (1.0 + dispersion * slope);
+    float3 col = float3(
+        backdrop.eval(cR).r * (1.0 - scrim(cR + origin)),
+        backdrop.eval(cG).g * (1.0 - scrim(cG + origin)),
+        backdrop.eval(cB).b * (1.0 - scrim(cB + origin)));
+
+    // Vibrancy: lift low-saturation colours more than saturated ones, protect highlights.
+    float lum = dot(col, float3(0.2126, 0.7152, 0.0722));
+    float satNow = max(col.r, max(col.g, col.b)) - min(col.r, min(col.g, col.b));
+    float room = 1.0 - smoothstep(0.2, 0.85, satNow);
+    float hl = 1.0 - smoothstep(0.75, 0.98, lum);
+    float amount = 1.0 + (saturation - 1.0) * mix(0.3, 1.0, room * hl);
+    col = clamp(mix(float3(lum), col, amount), float3(0.0), float3(1.0));
+
+    if (adaptive > 0.5) {
+        float e = smoothstep(0.35, 0.75, dot(col, float3(0.2126, 0.7152, 0.0722)));
+        col = mix(col, float3(1.0 - e), 0.14 + 0.08 * e + tint.a);
+    } else {
+        col = mix(col, tint.rgb, tint.a);
+    }
+
+    // Rim light from the same normals: two equal lobes (lit side and the inner reflection opposite), a 2 px
+    // hairline just inside the edge, and a soft glow inward on the lit side only. No constant outline.
+    float facing = dot(n, -lightDir);
+    float lobeF = pow(max(facing, 0.0), 4.5);
+    float lobeB = pow(max(-facing, 0.0), 4.5);
+    float bandW = clamp(bevel * 0.3, 2.0, rimBandMax);
+    float glowIn = clamp((-d - 1.0) / 2.0, 0.0, 1.0);
+    float glow = glowIn * pow(clamp(1.0 - (-d - 3.0) / bandW, 0.0, 1.0), 1.5) * cov;
+    float hair = clamp(1.0 - abs(d + 1.0) / 2.0, 0.0, 1.0) * cov;
+    col += float3((hair * 0.70 * (lobeF + lobeB) + glow * 0.10 * lobeF) * spec);
+
+    col = clamp(col, float3(0.0), float3(1.0));
+    return half4(half3(col * cov), half(cov));
 }
