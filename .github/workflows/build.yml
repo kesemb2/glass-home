@@ -66,8 +66,9 @@ jobs:
             echo "::error::APK is $size bytes, over the 6 MB budget."
             exit 1
           fi
-          if unzip -l glass-home.apk | grep -E '\.so$'; then
-            echo "::error::APK contains native libraries."
+          native_libs=$(unzip -Z1 glass-home.apk | grep -E '\.so$' || true)
+          if [ -n "$native_libs" ]; then
+            echo "::error::APK contains native libraries: $(echo $native_libs)"
             exit 1
           fi
 

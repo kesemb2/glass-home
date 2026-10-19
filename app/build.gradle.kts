@@ -77,6 +77,9 @@ android {
     }
 
     packaging {
+        // Compose's PathIterator helper. Only loaded below API 34 and only by Path.iterator(), which this app
+        // never calls; stripping it keeps the APK free of native code (CI enforces this).
+        jniLibs.excludes += "**/libandroidx.graphics.path.so"
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",
             "/META-INF/*.version",
