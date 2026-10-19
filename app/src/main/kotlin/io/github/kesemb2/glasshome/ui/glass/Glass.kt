@@ -272,16 +272,29 @@ private class BackdropSampler {
     }
 
     @RequiresApi(33)
-    private inner class LiquidSlots(private val sources: LiquidGlass.Sources) {
-        private inner class Lens(val bitmap: ImageBitmap) {
-            val sample = BitmapShader(bitmap.asAndroidBitmap(), android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP)
-                .apply { filterMode = BitmapShader.FILTER_MODE_LINEAR }
-            val shader = RuntimeShader(sources.lens)
+    private inner class LiquidSlots(sources: LiquidGlass.Sources) {
+        /** A compiled lens; only its input bitmap changes when the hero moves on, so nothing recompiles. */
+        private inner class Lens(source: String) {
+            val shader = RuntimeShader(source)
             val brush = ShaderBrush(shader)
+            var bitmap: ImageBitmap? = null
+            var sample: BitmapShader? = null
+
+            fun use(image: ImageBitmap): BitmapShader {
+                sample?.takeIf { bitmap === image }?.let { return it }
+                return BitmapShader(
+                    image.asAndroidBitmap(),
+                    android.graphics.Shader.TileMode.CLAMP,
+                    android.graphics.Shader.TileMode.CLAMP,
+                ).apply { filterMode = BitmapShader.FILTER_MODE_LINEAR }.also {
+                    bitmap = image
+                    sample = it
+                }
+            }
         }
 
-        private val lenses = arrayOfNulls<Lens>(2)
-        private var nextLens = 0
+        // Two lenses: the current glass source and, during a cross-fade, the previous one.
+        private val lenses = arrayOf(Lens(sources.lens), Lens(sources.lens))
         private val specular = RuntimeShader(sources.specular)
         private val specularBrush = ShaderBrush(specular)
 
@@ -296,9 +309,11 @@ private class BackdropSampler {
             val current = backdrop.current
             val fade = backdrop.fade.value
             val zoom = backdrop.zoom
-            if (previous != null && fade < 1f) lens(scope, path, previous, placement, zoom, size, minSide, radius, lightX, 1f)
+            if (previous != null && fade < 1f) {
+                lens(scope, path, previous, current, placement, zoom, size, minSide, radius, lightX, 1f)
+            }
             if (current != null) {
-                lens(scope, path, current, placement, zoom, size, minSide, radius, lightX, if (previous != null) fade else 1f)
+                lens(scope, path, current, previous, placement, zoom, size, minSide, radius, lightX, if (previous != null) fade else 1f)
             }
             backdrop.shade?.invoke(placement.root, placement.origin)?.forEach { scope.drawPath(path, it) }
             scope.drawPath(path, lerp(LIQUID_TINT, LIQUID_TINT_FOCUSED, focus))
@@ -311,16 +326,17 @@ private class BackdropSampler {
         }
 
         private fun lens(
-            scope: DrawScope, path: Path, bitmap: ImageBitmap, placement: Placement, zoom: Float, size: Size,
-            minSide: Float, radius: Float, lightX: Float, alpha: Float,
+            scope: DrawScope, path: Path, bitmap: ImageBitmap, other: ImageBitmap?, placement: Placement, zoom: Float,
+            size: Size, minSide: Float, radius: Float, lightX: Float, alpha: Float,
         ) {
-            val lens = lenses.firstOrNull { it?.bitmap === bitmap } ?: Lens(bitmap).also {
-                lenses[nextLens] = it
-                nextLens = (nextLens + 1) % lenses.size
-            }
-            lens.sample.setLocalMatrix(mapBitmap(bitmap, placement, zoom))
+            // Reuse the lens already showing this bitmap, else one not needed by the other cross-fade layer.
+            val lens = lenses.firstOrNull { it.bitmap === bitmap }
+                ?: lenses.firstOrNull { it.bitmap !== other }
+                ?: lenses[0]
+            val sample = lens.use(bitmap)
+            sample.setLocalMatrix(mapBitmap(bitmap, placement, zoom))
             // The runtime shader keeps the child as it was when set, so set it again after moving it.
-            lens.shader.setInputShader("backdrop", lens.sample)
+            lens.shader.setInputShader("backdrop", sample)
             lens.shader.setFloatUniform("size", size.width, size.height)
             lens.shader.setFloatUniform("radius", radius)
             lens.shader.setFloatUniform("depth", minSide * 0.18f)
