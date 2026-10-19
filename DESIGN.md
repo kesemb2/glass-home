@@ -72,6 +72,11 @@ Overlays above the grid (menus, folders) take one downscaled snapshot of the scr
 and use it as their backdrop. An optional AGSL refraction pass (Android 13+, focused element or shelf only)
 stays behind a setting and is kept only if it holds 60 fps.
 
+Kyant's "Backdrop" library (Apache-2.0, minSdk 21) was evaluated and not adopted for now: its blur uses
+`RenderEffect` (Android 12+) and its refraction `RuntimeShader` (Android 13+) on a live capture of the content
+behind each surface, i.e. a real-time blur every frame, which this design avoids on the Mali-G31. It stays a
+candidate for the optional refraction setting, measured against 60 fps in stage 4.
+
 ## Motion
 
 Springs everywhere; never linear tweens.
