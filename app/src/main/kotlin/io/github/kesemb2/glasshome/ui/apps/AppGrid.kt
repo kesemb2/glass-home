@@ -14,6 +14,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -90,6 +95,7 @@ fun FavoritesShelf(
     onFocused: (AppEntry) -> Unit,
     onClick: (AppEntry) -> Unit,
     onMenu: (AppEntry, Rect) -> Unit,
+    onDown: (column: Int) -> Boolean,
     modifier: Modifier = Modifier,
 ) {
     val type = LocalGlassType.current
@@ -110,7 +116,12 @@ fun FavoritesShelf(
         modifier
             .size(ShelfMetrics.Width, ShelfMetrics.Height)
             .glassShadow(Shapes.Shelf, 16.dp)
-            .glass(Shapes.Shelf),
+            .glass(Shapes.Shelf)
+            // Down goes to the grid card under the focused one (the grid starts off screen).
+            .onPreviewKeyEvent { event ->
+                event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown && focusedIndex >= 0 &&
+                    onDown(focusedIndex - start)
+            },
     ) {
         if (apps.isEmpty()) {
             BasicText(

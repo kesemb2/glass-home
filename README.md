@@ -25,8 +25,8 @@ https://github.com/kesemb2/glass-home/releases/latest/download/glass-home.apk
 | Stage | Scope | State |
 |---|---|---|
 | 0 | Repo, CI, signing, release publishing, diagnostics screen | done |
-| 1 | Design system + Continue Watching hero | **in progress** |
-| 2 | Favorites, app grid, folders, menus, settings | planned |
+| 1 | Design system + Continue Watching hero | done |
+| 2 | Favorites, app grid, folders, menus, settings | **in testing** |
 | 3 | Home button, start on boot, Hebrew/RTL pass | planned |
 | 4 | Performance and polish against the budgets | planned |
 
@@ -46,13 +46,22 @@ screen uses. Apps decide what they publish there.
   for two weeks.
 - **Remove from row:** hold OK on Play. Hidden locally only; it comes back if you watch that title again.
 
+## Home screen
+
+- **Favorites** sit on the glass shelf under Continue Watching; **all apps** are in the grid below (press Down).
+- **Hold OK** on any app or folder for its menu: move, favorites, folders, hide, app info.
+- **Move**: choose Move, then use the arrows; OK or Back when done.
+- **Folders**: hold OK on an app → Add to Folder → New Folder (or an existing one). Open a folder with OK.
+- **Settings** (gear next to the clock): show phone apps, Continue Watching auto-advance, glass refraction,
+  performance overlay, hidden apps (to show them again) and About (version, TMDB notice).
+
 ## Budgets
 
 | Budget | Target | Enforced |
 |---|---|---|
 | Release APK | < 6 MB | CI fails above 6 MB |
 | Native libraries | none | CI fails if the APK contains any `.so` |
-| Memory while visible | < ~150 MB PSS | measured on the TV (debug overlay, stage 2) |
+| Memory while visible | < ~150 MB PSS | measured on the TV (Settings → Performance overlay) |
 | Frame rate | 60 fps on Mali-G31 | measured on the TV |
 | Idle work | none (no polling, services or endless animations) | code review |
 
@@ -116,5 +125,5 @@ Design tokens and motion rules: see [DESIGN.md](DESIGN.md).
 - Liquid-glass optics (`app/src/main/res/raw/glass_lens.agsl`) adapted from
   [Liquid Glass Android](https://github.com/QWEA0/Liquid-Glass-Android), MIT License, Copyright (c) 2025-2026 pandadog.
 - Metadata and artwork: this product uses the TMDB API but is not endorsed or certified by
-  [TMDB](https://www.themoviedb.org/). The attribution notice and TMDB logo appear in Settings › About (stage 2).
+  [TMDB](https://www.themoviedb.org/). The attribution notice and TMDB logo appear in Settings › About.
 - Not affiliated with Apple. No Apple fonts, symbols, logos or names are used.

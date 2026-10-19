@@ -147,7 +147,7 @@ private fun HomeContent(
         when {
             moving != null -> nav.moving = null
             overlaysOpen -> {
-                val top = nav.overlays.last()
+                val top = nav.overlays.lastOrNull()
                 when {
                     top is Overlay.Menu && top.page != MenuPage.Main -> nav.replaceTop(top.copy(page = MenuPage.Main))
                     top is Overlay.Settings && top.page != SettingsPage.Main -> nav.replaceTop(top.copy(page = SettingsPage.Main))
@@ -255,6 +255,10 @@ private fun HomeContent(
                     onMenu = { app, anchor ->
                         nav.open(Overlay.Menu(nav.newId(), MenuTarget.ShelfApp(app), anchor, SHELF_PREFIX + app.packageName))
                     },
+                    onDown = { column ->
+                        view.grid.getOrNull(column.coerceAtMost(view.grid.size - 1))
+                            ?.let { nav.focus(GRID_PREFIX + it.key) } == true || focusGrid()
+                    },
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = screenHeight - Spacing.ScreenVertical - ShelfMetrics.Height)
@@ -324,7 +328,13 @@ private fun HomeContent(
                 ClockPill()
             }
 
-            if (moving != null) MoveHint(Modifier.align(Alignment.BottomCenter))
+            if (moving != null) {
+                MoveHint(
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = Spacing.ScreenVertical + 6.dp),
+                )
+            }
         }
 
         nav.overlays.forEachIndexed { i, overlay ->
@@ -379,7 +389,6 @@ private fun MoveHint(modifier: Modifier) {
     val type = LocalGlassType.current
     Box(
         modifier
-            .padding(bottom = 6.dp)
             .background(GlassColors.Background.copy(alpha = 0.7f), io.github.kesemb2.glasshome.ui.theme.Shapes.Pill)
             .padding(horizontal = 14.dp, vertical = 4.dp),
     ) {

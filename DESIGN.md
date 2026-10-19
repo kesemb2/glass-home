@@ -3,7 +3,8 @@
 Reference: Apple's tvOS Human Interface Guidelines for spacing, focus and motion; the look of the
 tvOS 26 home screen with Liquid Glass. Inspired by, not copied: no Apple fonts, symbols, logos or names.
 
-Status: implemented in stage 1 (`ui/theme`, `ui/glass`, `ui/motion`). Values measured on the TV are noted.
+Status: design system from stage 1 (`ui/theme`, `ui/glass`, `ui/motion`); home screen, grid, menus, folders and
+settings from stage 2 (`ui/home`, `ui/apps`, `ui/overlay`, `ui/settings`). Values measured on the TV are noted.
 
 ## Canvas
 
@@ -42,7 +43,7 @@ content titles) renders in it while digits and Latin stay in Inter.
 | `title1` | 32 sp | 600 | Screen titles |
 | `title2` | 24 sp | 600 | Folder titles, dialogs |
 | `headline` | 19 sp | 600 | Buttons, card titles |
-| `body` | 17 sp / 1.35 | 400 | Synopsis (max 3 lines, ~520 dp wide) |
+| `body` | 17 sp / 1.35 | 400 | Synopsis (max 2 lines, ~520 dp wide) |
 | `callout` | 15 sp | 500 | Metadata line ("S2 · E5 · Episode title"), source-app label |
 | `caption` | 13 sp | 500 | Clock, progress "42 min left", small labels |
 
@@ -54,7 +55,13 @@ content titles) renders in it while digits and Latin stay in Inter.
   and eases in with one cubic, so curvature ramps up from zero instead of jumping like a circular arc.
 - App card: 16:9, **160 × 90 dp with 16 dp gaps** in a 5-column grid (5 × 160 + 4 × 16 = 864 dp, the full content
   width). Chosen over the brief's ~200 × 112 dp, which does not fit 5 columns.
-- App card fallback (no TV banner): the icon centred on a fill of its dominant colour (computed once, cached).
+- App card fallback (no TV banner): the icon (44 dp) and the app name (`caption`) on a fill of the icon's dominant
+  colour. The colour is the most common 4-bit colour bin, colourful pixels weighted above greys (so a brand colour
+  beats a white background), scaled to an HSV value of 0.22–0.52 so white text reads on it. It is computed once per
+  app version and cached on disk, so a card shows its colour at once while its image loads.
+- Card images are rendered once at the size they are shown at (banners 320 × 180 px, icons 96 px) and moved to GPU
+  memory (hardware bitmaps); they are dropped when the home screen is hidden. Edges are anti-aliased by filling the
+  card shape with an image shader rather than clipping.
 
 ## Liquid glass (cheap on Mali-G31)
 
@@ -89,8 +96,15 @@ Both paths fill the shape's path, so edges stay anti-aliased on any shape. The s
 drawn (focus and hero transitions); an idle screen draws nothing. Outer shadow: black 35%, via the focus lift or
 `glassShadow` (6–24 dp).
 
-Overlays above the grid (menus, folders) take one downscaled snapshot of the screen when opening, blur it once
-and use it as their source.
+Over the app grid the backdrop is replaced by a far more blurred version (192 × 108 px, box-blur radius 3), and
+glass refracts that instead, with an even 40% darkening term (`shadeX.w` in the shader) matching the screen.
+
+Glass surfaces observe their own position on screen, so a surface that moves (the camera scrolling, a focus
+scale) redraws its sample; one that does not move draws nothing.
+
+Overlays (menus, folders, settings) take one snapshot of the screen when they open (`PixelCopy` into 480 × 270 px,
+three box-blur passes of radius 4) and use it as their backdrop and as the source their glass refracts. The layer
+stays invisible until the snapshot is taken, so it never captures itself. Nothing is blurred while it is open.
 
 The reference library captures and blurs the live content behind each surface every frame (`RenderEffect`, Android
 12+); this app keeps the same optics on a pre-blurred source instead, which suits the Mali-G31. Kyant's "Backdrop"
@@ -107,6 +121,7 @@ Springs everywhere; never linear tweens.
 | `overlay` | 0.8 | 500 | Menus and folders scaling in from their anchor |
 | `color` | 1.0 | 500 | Focus fills (critically damped so colours never overshoot) |
 | `exit` | 1.0 | 1500 | Outgoing hero text |
+| `camera` | 1.0 | 300 | The home screen scrolling between hero and grid (never bounces) |
 | `sweep` | 1.0 | 40 | The one-shot specular highlight |
 
 - **Focus** (`Modifier.focusEffect`): cards scale to 1.12 and buttons to 1.08, lift (shadow 0 → 18 dp / 12 dp),
@@ -120,9 +135,15 @@ Springs everywhere; never linear tweens.
   text fades out fast. Page dots sit in a glass pill. Play is outside the animated block, so it keeps focus.
 - **Auto-advance**: every 8 s, only while the hero is visible and focused; pauses for 20 s after any key press.
 - **Leaving the hero**: its text fades out and the backdrop cross-fades to the blurred, darkened version that
-  stays fixed behind the scrolling grid. Up returns to the hero.
-- **Folders/menus**: open from their card or anchor (scale + fade).
-- **Move mode**: the card wiggles slightly. This is the only repeating animation and runs only while moving.
+  stays fixed behind the scrolling grid. Up from the first grid row returns to the shelf, Back to Play.
+- **Camera**: the page (hero text, shelf, grid) moves as one; the backdrop, clock and settings button stay fixed.
+  The first two grid rows are shown together; below that the page follows focus one row at a time.
+- **Menus**: open next to their card (below it when there is room, else above), scaling in from the card's side;
+  a sharp copy of the card stays lifted over the blur.
+- **Folders**: open full screen over the blurred home screen (scale 0.94 → 1 and fade).
+- **Settings**: a glass panel slides in from the end edge.
+- **Move mode**: the card wiggles slightly (±1.6°, eased, 140 ms per swing) while the D-pad moves it and its
+  neighbours slide aside (`focus` spring). This is the only repeating animation and runs only while moving.
 - **Idle**: when nothing is focused-changing or playing, no frame is drawn.
 
 ## Images
@@ -133,10 +154,36 @@ Springs everywhere; never linear tweens.
 - Small memory cache, capped disk cache; prefetch only the next and previous hero items.
 - A mostly dark logo gets a subtle light glow so it stays readable.
 
-## Hero layout
+## Home layout
 
-Start-aligned in the lower area (bottom edge 64 dp above the screen bottom), over a start-side and a bottom
-scrim: source app (20 dp icon + caption) → logo (max 380 × 120 dp; title in `display` when there is none) →
-metadata (`callout`, secondary) → synopsis (`body`, 85% white, max 3 lines, 520 dp) → 140 dp progress bar with
-"42 min left" (`caption`) → glass Play button ("Resume" when there is progress). Page dots: bottom centre.
-Clock: glass pill at the top-end corner.
+The page, top to bottom (960 × 540 dp screen):
+
+- **Hero** (one screen high). Start-aligned text block ending 173 dp above the bottom, over a start-side and a
+  bottom scrim: source app (20 dp icon + caption) → logo (max 380 × 96 dp; title in `display` when there is none)
+  → metadata (`callout`, secondary) → synopsis (`body`, 85% white, max 2 lines, 520 dp) → 140 dp progress bar with
+  "42 min left" (`caption`) → glass Play button ("Resume" when there is progress). Page dots: glass pill at the
+  end side, level with Play.
+- **Favorites shelf**: a glass tray (28 dp corners) 896 × 122 dp, 27 dp above the bottom, holding five 160 × 90 dp
+  cards aligned with the grid columns. More than five scroll a card at a time; cards outside the window fade out
+  rather than being clipped, so the focused card's lift is never cut. No labels (banners carry the name).
+- **App grid**: starts 60 dp below the hero; 5 columns of 160 × 90 dp cards, 16 dp apart, row pitch 130 dp; the
+  focused card's name appears 12 dp below it. On screen the first row sits 96 dp from the top.
+- **Fixed top bar**: round glass settings button (34 dp) and the clock pill at the top-end corner.
+
+Focus moves geometrically, with explicit links where the layout needs them: Down from Play → the last focused
+favorite; Down from a favorite → the grid card below it; Up from the first grid row → the last focused favorite;
+Up from Play or the shelf → settings; Down from settings → wherever focus was. Back from the grid or the shelf
+returns to Play. When the focused element disappears (hidden, moved into a folder, uninstalled), focus goes to its
+neighbour, never to nothing.
+
+Hold OK opens the card's menu: apps — Move, Add to/Remove from Favorites, Add to Folder (existing folders + New
+Folder), Hide, App Info; folders — Move, Remove Folder (its apps take its place); apps in a folder — Move, Remove
+from Folder, Favorites, Hide, App Info. Move mode: the D-pad moves the card (Up/Down by a row), OK or Back ends it.
+
+The layout (favorites, grid order, folders, hidden apps) is saved as JSON on every change. Apps are listed from
+their TV launcher activities, plus phone-only apps when that setting is on; installs, updates and removals arrive
+through `LauncherApps` callbacks while the launcher is visible. First run fills the shelf with up to five apps
+(known streaming apps first).
+
+A **performance overlay** (setting) shows rendered frames in the last second (from the window's frame metrics, so
+an idle screen reads ~0), slow frames (> 16.7 ms), the 95th-percentile frame time and the process PSS.
