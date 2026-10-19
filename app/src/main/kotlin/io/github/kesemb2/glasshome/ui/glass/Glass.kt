@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shader
 import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -52,7 +53,8 @@ import kotlin.math.min
 
 /**
  * Screen-space darkening behind glass (for example the hero's scrims): a horizontal ramp from [alphaX] at [fromX]
- * to 0 at [toX], and a vertical ramp from 0 at [fromY] to [alphaY] at [toY], stacked like two scrims.
+ * to 0 at [toX], a vertical ramp from 0 at [fromY] to [alphaY] at [toY], and an even [uniform] darkening, stacked
+ * like three scrims.
  */
 @Immutable
 data class GlassShade(
@@ -62,9 +64,14 @@ data class GlassShade(
     val fromY: Float,
     val toY: Float,
     val alphaY: Float,
+    val uniform: Float = 0f,
 ) {
+    /** The ramps faded out by [amount] (0..1) while an even darkening of [dim] fades in. */
+    fun fadeTo(amount: Float, dim: Float): GlassShade =
+        copy(alphaX = alphaX * (1f - amount), alphaY = alphaY * (1f - amount), uniform = dim * amount)
+
     /** The same ramps as brushes, in the coordinates of a surface whose origin is at ([dx], [dy]). */
-    fun brushes(dx: Float = 0f, dy: Float = 0f): List<Brush> = listOf(
+    fun brushes(dx: Float = 0f, dy: Float = 0f): List<Brush> = listOfNotNull(
         Brush.horizontalGradient(
             0f to Color.Black.copy(alpha = alphaX),
             1f to Color.Transparent,
@@ -77,6 +84,7 @@ data class GlassShade(
             startY = fromY - dy,
             endY = toY - dy,
         ),
+        if (uniform > 0f) SolidColor(Color.Black.copy(alpha = uniform)) else null,
     )
 }
 
@@ -98,6 +106,12 @@ class GlassBackdrop {
 
     /** How much larger than the screen the visible backdrop is drawn (centred), so samples line up with it. */
     var zoom: Float = 1f
+
+    /** Shows [bitmap] at once, without a cross-fade (overlays, whose source never changes). */
+    fun set(bitmap: ImageBitmap?) {
+        previous = null
+        current = bitmap
+    }
 
     /** Cross-fades glass surfaces to [bitmap] (null shows tint only). */
     suspend fun show(bitmap: ImageBitmap?) {
@@ -122,9 +136,8 @@ val LocalGlassBackdrop = staticCompositionLocalOf<GlassBackdrop?> { null }
  * fails, or on older Android, or when [enabled] is off, surfaces fall back to the layered look.
  */
 object LiquidGlass {
-    /** The "glass refraction" setting. */
-    @Volatile
-    var enabled: Boolean = true
+    /** The "glass refraction" setting; observable, so surfaces switch paths as soon as it changes. */
+    var enabled: Boolean by mutableStateOf(true)
 
     @Volatile
     private var failed = false
@@ -167,7 +180,7 @@ fun Modifier.glass(shape: Shape, focus: () -> Float = { 0f }, rim: Boolean = tru
     val backdrop = LocalGlassBackdrop.current
     val lens = LiquidGlass.source(LocalContext.current)
     val sampler = remember { BackdropSampler() }
-    onGloballyPositioned { sampler.coordinates = it }
+    onGloballyPositioned { sampler.update(it) }
         .drawWithCache {
             val outline = shape.createOutline(size, layoutDirection, this)
             val path = outline.asPath()
@@ -227,9 +240,13 @@ private fun Outline.cornerRadius(shape: Shape, density: Density): Float = when (
     is Outline.Generic -> (shape as? ContinuousRoundedShape)?.radiusPx(density)?.times(1.25f) ?: 0f
 }
 
-/** Maps the screen-sized blurred bitmap onto one surface; keeps shaders per bitmap (at most two live). */
+/**
+ * Maps the screen-sized blurred bitmap onto one surface; keeps shaders per bitmap (at most two live). The
+ * surface's position is observable state, so a surface that moves (scrolling, focus scale) redraws its sample.
+ */
 private class BackdropSampler {
-    var coordinates: LayoutCoordinates? = null
+    private var origin by mutableStateOf(Offset.Zero)
+    private var root by mutableStateOf(Size.Zero)
     private val matrix = Matrix()
     private val plainSlots = arrayOfNulls<PlainSlot>(2)
     private var nextPlain = 0
@@ -239,11 +256,17 @@ private class BackdropSampler {
 
     private class Placement(val origin: Offset, val root: Size)
 
+    fun update(coordinates: LayoutCoordinates) {
+        if (!coordinates.isAttached) return
+        val rootSize = coordinates.findRootCoordinates().size
+        origin = coordinates.positionInRoot()
+        root = Size(rootSize.width.toFloat(), rootSize.height.toFloat())
+    }
+
     private fun placement(): Placement? {
-        val coords = coordinates?.takeIf { it.isAttached } ?: return null
-        val root = coords.findRootCoordinates()
-        if (root.size.width <= 0 || root.size.height <= 0) return null
-        return Placement(coords.positionInRoot(), Size(root.size.width.toFloat(), root.size.height.toFloat()))
+        val root = root
+        if (root.width <= 0f || root.height <= 0f) return null
+        return Placement(origin, root)
     }
 
     private fun mapBitmap(bitmap: ImageBitmap, placement: Placement, zoom: Float): Matrix = matrix.apply {
@@ -361,7 +384,7 @@ private class BackdropSampler {
             shader.setFloatUniform("adaptive", 1f)
             shader.setFloatUniform("origin", placement.origin.x, placement.origin.y)
             if (shade != null) {
-                shader.setFloatUniform("shadeX", shade.fromX, shade.toX, shade.alphaX, 0f)
+                shader.setFloatUniform("shadeX", shade.fromX, shade.toX, shade.alphaX, shade.uniform)
                 shader.setFloatUniform("shadeY", shade.fromY, shade.toY, shade.alphaY, 0f)
             } else {
                 shader.setFloatUniform("shadeX", 0f, 1f, 0f, 0f)

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -96,22 +97,36 @@ private const val AUTO_ADVANCE_MS = 8_000L
 private const val PAUSE_AFTER_KEY_MS = 20_000L
 private const val STAGGER_MS = 40L
 private val PARALLAX = 24.dp
-private val CONTENT_BOTTOM = 64.dp
+
+/** The hero text ends above the favorites shelf (27 dp margin + 122 dp shelf + 24 dp gap). */
+val HERO_CONTENT_BOTTOM = 173.dp
+private val CONTENT_BOTTOM = HERO_CONTENT_BOTTOM
 private val LOGO_MAX_WIDTH = 380.dp
-private val LOGO_MAX_HEIGHT = 120.dp
+private val LOGO_MAX_HEIGHT = 96.dp
 private val LOGO_PLACEHOLDER = 72.dp
 private val SYNOPSIS_WIDTH = 520.dp
+
+/** Darkening over the blurred backdrop behind the app grid (and inside glass there). */
+const val GRID_DIM = 0.4f
 
 /**
  * Continue Watching, full screen. Left/Right on Play changes the item (backdrop cross-fades with a parallax
  * slide, text staggers in); the hero auto-advances every 8 s only while visible and focused, and pauses for
  * 20 s after any key press. Hold OK on Play for "Remove from Continue Watching".
+ *
+ * The backdrop stays fixed; the text moves up with [camera] (px) and fades out as [grid] goes to 1, while the
+ * backdrop cross-fades to a heavily blurred, darker version for the app grid ([inGrid]). [focusModifier] goes on
+ * Play (or Allow), before its focus target.
  */
 @Composable
 fun HeroScreen(
     state: HeroUiState,
     autoAdvance: Boolean,
     lastKeyAt: () -> Long,
+    camera: () -> Float,
+    grid: () -> Float,
+    inGrid: Boolean,
+    focusModifier: Modifier,
     onPlay: (HeroItem) -> Unit,
     onDismiss: (HeroItem) -> Unit,
     onRequestAccess: () -> Unit,
@@ -129,7 +144,6 @@ fun HeroScreen(
     var forward by remember { mutableStateOf(true) }
     var heroFocused by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
-    val playFocus = remember { FocusRequester() }
 
     fun step(delta: Int) {
         if (items.size < 2) return
@@ -145,8 +159,11 @@ fun HeroScreen(
     val sharp by rememberLoadedImage(backdropUrl) { loader, ctx, url ->
         HeroImages.loadBackdrop(loader, ctx, url, widthPx, heightPx)
     }
-    LaunchedEffect(soft) {
-        when (val b = soft) {
+    val dim by rememberImage(backdropUrl) { ctx, url -> HeroImages.dimmed(ctx, url) }
+    // Glass refracts what is behind it: the soft source over the hero, the grid's blur behind the grid.
+    LaunchedEffect(soft, dim, inGrid) {
+        val source = if (inGrid && dim is ImageState.Ready) dim else soft
+        when (val b = source) {
             is ImageState.Ready -> glass?.show(b.bitmap)
             ImageState.Failed -> glass?.show(null)
             ImageState.Loading -> Unit
@@ -183,7 +200,7 @@ fun HeroScreen(
     // Glass surfaces get the same scrims and the same overscan zoom as the backdrop behind them.
     val overscanPx = with(LocalDensity.current) { PARALLAX.toPx() }
     DisposableEffect(glass, rtl, overscanPx) {
-        glass?.shade = { root -> HeroScrim.shade(root.width, root.height, rtl) }
+        glass?.shade = { root -> HeroScrim.shade(root.width, root.height, rtl).fadeTo(grid(), GRID_DIM) }
         glass?.zoom = 1f + 2f * overscanPx / metrics.widthPixels
         onDispose {
             glass?.shade = null
@@ -191,15 +208,21 @@ fun HeroScreen(
         }
     }
 
-    LaunchedEffect(menuOpen, item != null) {
-        if (!menuOpen && item != null) playFocus.requestFocus()
-    }
     BackHandler(enabled = menuOpen) { menuOpen = false }
 
     Box(Modifier.fillMaxSize()) {
         HeroBackdrop(item?.key, sharp.bitmapFor(backdropUrl), soft.bitmapFor(backdropUrl), forward, rtl, overscanPx)
-        Scrims(rtl)
+        Scrims(rtl) { 1f - grid() }
+        GridBackdrop(dim.bitmapFor(backdropUrl), grid)
+    }
 
+    // The text scrolls away with the camera and fades out over the grid.
+    Box(
+        Modifier
+            .fillMaxSize()
+            .offset { IntOffset(0, -camera().roundToInt()) }
+            .graphicsLayer { alpha = (1f - grid()).coerceIn(0f, 1f) },
+    ) {
         if (item != null) {
             Column(
                 Modifier
@@ -219,8 +242,7 @@ fun HeroScreen(
                     icon = R.drawable.ic_play,
                     onClick = { onPlay(item) },
                     onLongClick = { menuOpen = true },
-                    modifier = Modifier
-                        .focusRequester(playFocus)
+                    modifier = focusModifier
                         .onFocusChanged { heroFocused = it.isFocused }
                         .onKeyEvent { event ->
                             val next = if (rtl) Key.DirectionLeft else Key.DirectionRight
@@ -240,12 +262,12 @@ fun HeroScreen(
                     count = items.size,
                     selected = index,
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = Spacing.ScreenVertical),
+                        .align(Alignment.BottomEnd)
+                        .padding(end = Spacing.ScreenHorizontal, bottom = CONTENT_BOTTOM + 14.dp),
                 )
             }
         } else if (state.loaded) {
-            EmptyHero(state, onRequestAccess, Modifier.align(Alignment.BottomStart))
+            EmptyHero(state, onRequestAccess, focusModifier, Modifier.align(Alignment.BottomStart))
         }
 
         if (menuOpen && item != null) {
@@ -321,15 +343,40 @@ private fun DrawScope.drawCover(image: ImageBitmap, alpha: Float, offsetX: Float
     )
 }
 
-/** Start-side and bottom scrims keep the text legible over any backdrop. */
+/** Start-side and bottom scrims keep the text legible over any backdrop; they fade out over the grid. */
 @Composable
-private fun Scrims(rtl: Boolean) {
+private fun Scrims(rtl: Boolean, alpha: () -> Float) {
     Spacer(
         Modifier
             .fillMaxSize()
             .drawWithCache {
                 val brushes = HeroScrim.shade(size.width, size.height, rtl).brushes()
-                onDrawBehind { brushes.forEach { drawRect(it) } }
+                onDrawBehind {
+                    val a = alpha().coerceIn(0f, 1f)
+                    if (a > 0f) brushes.forEach { drawRect(it, alpha = a) }
+                }
+            },
+    )
+}
+
+/** Behind the app grid: the backdrop heavily blurred and darkened, faded in by [amount]. */
+@Composable
+private fun GridBackdrop(image: ImageBitmap?, amount: () -> Float) {
+    Spacer(
+        Modifier
+            .fillMaxSize()
+            .drawBehind {
+                val a = amount().coerceIn(0f, 1f)
+                if (a <= 0f) return@drawBehind
+                if (image != null) {
+                    drawImage(
+                        image = image,
+                        dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
+                        alpha = a,
+                        filterQuality = FilterQuality.Low,
+                    )
+                }
+                drawRect(Color.Black, alpha = GRID_DIM * a)
             },
     )
 }
@@ -421,7 +468,7 @@ private fun HeroText(item: HeroItem, rtl: Boolean) {
                 text = it,
                 modifier = Modifier.stagger(rememberStagger(3), offsetPx).width(SYNOPSIS_WIDTH),
                 style = type.body.copy(color = GlassColors.TextPrimary.copy(alpha = 0.85f)),
-                maxLines = 3,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -574,14 +621,13 @@ private fun HeroMenu(rtl: Boolean, onRemove: () -> Unit, modifier: Modifier) {
 }
 
 @Composable
-private fun EmptyHero(state: HeroUiState, onRequestAccess: () -> Unit, modifier: Modifier) {
+private fun EmptyHero(state: HeroUiState, onRequestAccess: () -> Unit, focusModifier: Modifier, modifier: Modifier) {
     val type = LocalGlassType.current
     val (title, body) = when (state.access) {
         AccessState.Requestable -> R.string.empty_access_title to R.string.empty_access_body
         AccessState.Blocked -> R.string.empty_blocked_title to R.string.empty_blocked_body
         else -> R.string.empty_none_title to R.string.empty_none_body
     }
-    val allowFocus = remember { FocusRequester() }
     Column(modifier.padding(start = Spacing.ScreenHorizontal, bottom = CONTENT_BOTTOM).width(SYNOPSIS_WIDTH)) {
         BasicText(stringResource(title), style = type.title1.copy(color = GlassColors.TextPrimary))
         Spacer(Modifier.height(Spacing.S))
@@ -592,9 +638,8 @@ private fun EmptyHero(state: HeroUiState, onRequestAccess: () -> Unit, modifier:
                 text = stringResource(R.string.empty_allow),
                 icon = null,
                 onClick = onRequestAccess,
-                modifier = Modifier.focusRequester(allowFocus),
+                modifier = focusModifier,
             )
-            LaunchedEffect(Unit) { allowFocus.requestFocus() }
         }
         Spacer(Modifier.height(Spacing.XL))
         // Diagnostics for the first runs on a new TV: which TV-listing permissions exist and are granted.

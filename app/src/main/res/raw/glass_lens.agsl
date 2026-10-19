@@ -23,7 +23,7 @@ uniform float saturation;  // vibrancy (1 = unchanged)
 uniform float4 tint;       // straight-alpha tint colour, used when adaptive is 0
 uniform float adaptive;    // 1: per-pixel adaptive tint (lighten over dark, darken over light)
 uniform float2 origin;     // this surface's top-left on screen, px
-uniform float4 shadeX;     // screen scrim, horizontal ramp: (from x, to x, alpha at from, 0)
+uniform float4 shadeX;     // screen scrim, horizontal ramp: (from x, to x, alpha at from, even darkening)
 uniform float4 shadeY;     // screen scrim, vertical ramp: (from y, to y, alpha at to, 0)
 
 float sdRoundedBox(float2 p, float2 b, float r) {
@@ -34,7 +34,7 @@ float sdRoundedBox(float2 p, float2 b, float r) {
 float scrim(float2 s) {
     float ax = shadeX.z * clamp((s.x - shadeX.y) / (shadeX.x - shadeX.y), 0.0, 1.0);
     float ay = shadeY.z * clamp((s.y - shadeY.x) / (shadeY.y - shadeY.x), 0.0, 1.0);
-    return 1.0 - (1.0 - ax) * (1.0 - ay);
+    return 1.0 - (1.0 - ax) * (1.0 - ay) * (1.0 - shadeX.w);
 }
 
 half4 main(float2 coord) {

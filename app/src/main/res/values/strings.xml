@@ -24,4 +24,41 @@
     <string name="empty_none_title">Nothing to continue yet</string>
     <string name="empty_none_body">Start watching something in an app that supports Continue Watching and it will appear here.</string>
     <string name="diag_rows">Watch Next rows visible: %1$d</string>
+
+    <!-- Apps -->
+    <string name="shelf_empty">Hold OK on an app and choose Add to Favorites to keep it here.</string>
+    <string name="folder_default_name">Folder %1$d</string>
+    <string name="move_hint">Use the arrows to move it · OK when done</string>
+
+    <!-- Hold-OK menus -->
+    <string name="menu_move">Move</string>
+    <string name="menu_add_favorite">Add to Favorites</string>
+    <string name="menu_remove_favorite">Remove from Favorites</string>
+    <string name="menu_add_to_folder">Add to Folder</string>
+    <string name="menu_new_folder">New Folder</string>
+    <string name="menu_hide">Hide</string>
+    <string name="menu_app_info">App Info</string>
+    <string name="menu_remove_folder">Remove Folder</string>
+    <string name="menu_remove_from_folder">Remove from Folder</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_on">On</string>
+    <string name="settings_off">Off</string>
+    <string name="settings_phone_apps">Show phone apps</string>
+    <string name="settings_phone_apps_hint">Apps made for phones and tablets, without a TV version</string>
+    <string name="settings_auto_advance">Continue Watching auto-advance</string>
+    <string name="settings_auto_advance_hint">Move to the next title every 8 seconds</string>
+    <string name="settings_glass">Glass refraction</string>
+    <string name="settings_glass_hint">Off uses simpler, flat glass</string>
+    <string name="settings_perf">Performance overlay</string>
+    <string name="settings_perf_hint">Frame rate and memory in the corner</string>
+    <string name="settings_hidden">Hidden apps</string>
+    <string name="settings_hidden_empty">No hidden apps.</string>
+    <string name="settings_hidden_hint">Press OK on an app to show it again.</string>
+    <string name="settings_unhide">Show</string>
+    <string name="settings_about">About</string>
+    <string name="about_version">Version %1$s (%2$s)</string>
+    <string name="about_tmdb" translatable="false">This product uses the TMDB API but is not endorsed or certified by TMDB.</string>
+    <string name="about_credits" translatable="false">Fonts: Inter and Noto Sans Hebrew (SIL Open Font License 1.1). Icons: Material Symbols (Apache License 2.0). Liquid-glass optics adapted from Liquid Glass Android by pandadog (MIT License). Not affiliated with Apple.</string>
 </resources>

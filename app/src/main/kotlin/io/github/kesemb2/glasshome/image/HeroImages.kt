@@ -36,7 +36,11 @@ object HeroImages {
     const val BLUR_HEIGHT = 270
     private const val BLUR_RADIUS = 1
     private const val BLUR_SATURATION = 1.15f
-    private const val BLUR_GAIN = 1f
+
+    /** The backdrop behind the app grid: tiny and heavily blurred, then scaled up (bilinear keeps it smooth). */
+    private const val DIM_WIDTH = 192
+    private const val DIM_HEIGHT = 108
+    private const val DIM_RADIUS = 3
 
     const val LOGO_MAX_PX = 600
 
@@ -56,13 +60,17 @@ object HeroImages {
         loader.loadImageBitmap(backdrop(context, url, widthPx, heightPx))
             ?: loader.loadImageBitmap(backdrop(context, url, widthPx, heightPx, hardware = false))
 
-    fun blurred(context: Context, url: String): ImageRequest =
+    fun blurred(context: Context, url: String): ImageRequest = blurRequest(context, url, GlassSource)
+
+    fun dimmed(context: Context, url: String): ImageRequest = blurRequest(context, url, GridSource)
+
+    private fun blurRequest(context: Context, url: String, blur: BlurTransformation): ImageRequest =
         ImageRequest.Builder(context)
             .data(url)
-            .size(BLUR_WIDTH, BLUR_HEIGHT)
+            .size(blur.width, blur.height)
             .scale(Scale.FILL)
             .allowHardware(false)
-            .transformations(BlurTransformation)
+            .transformations(blur)
             .build()
 
     fun logo(context: Context, url: String): ImageRequest =
@@ -74,24 +82,33 @@ object HeroImages {
             .transformations(LogoTransformation)
             .build()
 
-    /** Centre-crops to 480 x 270, blurs and saturates. Runs once per backdrop on Coil's decoder thread. */
-    private object BlurTransformation : Transformation() {
-        override val cacheKey: String = "glass-source-v3"
+    private val GlassSource = BlurTransformation("glass-source-v3", BLUR_WIDTH, BLUR_HEIGHT, BLUR_RADIUS, BLUR_SATURATION)
+    private val GridSource = BlurTransformation("grid-source-v1", DIM_WIDTH, DIM_HEIGHT, DIM_RADIUS, 1f)
+
+    /** Centre-crops to [width] x [height], blurs and saturates. Runs once per backdrop on Coil's decoder thread. */
+    private class BlurTransformation(
+        key: String,
+        val width: Int,
+        val height: Int,
+        private val radius: Int,
+        private val saturation: Float,
+    ) : Transformation() {
+        override val cacheKey: String = key
 
         override suspend fun transform(input: Bitmap, size: Size): Bitmap {
-            val out = Bitmap.createBitmap(BLUR_WIDTH, BLUR_HEIGHT, Bitmap.Config.ARGB_8888)
-            val scale = max(BLUR_WIDTH / input.width.toFloat(), BLUR_HEIGHT / input.height.toFloat())
-            val srcWidth = BLUR_WIDTH / scale
-            val srcHeight = BLUR_HEIGHT / scale
+            val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val scale = max(width / input.width.toFloat(), height / input.height.toFloat())
+            val srcWidth = width / scale
+            val srcHeight = height / scale
             val left = ((input.width - srcWidth) / 2f).roundToInt()
             val top = ((input.height - srcHeight) / 2f).roundToInt()
             val src = Rect(left, top, left + srcWidth.roundToInt(), top + srcHeight.roundToInt())
-            Canvas(out).drawBitmap(input, src, Rect(0, 0, BLUR_WIDTH, BLUR_HEIGHT), Paint(Paint.FILTER_BITMAP_FLAG))
-            val pixels = IntArray(BLUR_WIDTH * BLUR_HEIGHT)
-            out.getPixels(pixels, 0, BLUR_WIDTH, 0, 0, BLUR_WIDTH, BLUR_HEIGHT)
-            FastBlur.blur(pixels, BLUR_WIDTH, BLUR_HEIGHT, BLUR_RADIUS)
-            FastBlur.saturate(pixels, BLUR_SATURATION, BLUR_GAIN)
-            out.setPixels(pixels, 0, BLUR_WIDTH, 0, 0, BLUR_WIDTH, BLUR_HEIGHT)
+            Canvas(out).drawBitmap(input, src, Rect(0, 0, width, height), Paint(Paint.FILTER_BITMAP_FLAG))
+            val pixels = IntArray(width * height)
+            out.getPixels(pixels, 0, width, 0, 0, width, height)
+            FastBlur.blur(pixels, width, height, radius)
+            if (saturation != 1f) FastBlur.saturate(pixels, saturation)
+            out.setPixels(pixels, 0, width, 0, 0, width, height)
             return out
         }
     }

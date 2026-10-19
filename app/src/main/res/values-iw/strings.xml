@@ -22,4 +22,39 @@
     <string name="empty_none_title">אין עדיין מה להמשיך</string>
     <string name="empty_none_body">התחל לצפות במשהו באפליקציה שתומכת ב״המשך צפייה״, והוא יופיע כאן.</string>
     <string name="diag_rows">שורות גלויות ברשימה: %1$d</string>
+
+    <!-- Apps -->
+    <string name="shelf_empty">לחיצה ארוכה על OK באפליקציה ובחירה ב״הוספה למועדפים״ תשמור אותה כאן.</string>
+    <string name="folder_default_name">תיקייה %1$d</string>
+    <string name="move_hint">הזזה בעזרת החצים · OK לסיום</string>
+
+    <!-- Hold-OK menus -->
+    <string name="menu_move">הזזה</string>
+    <string name="menu_add_favorite">הוספה למועדפים</string>
+    <string name="menu_remove_favorite">הסרה מהמועדפים</string>
+    <string name="menu_add_to_folder">הוספה לתיקייה</string>
+    <string name="menu_new_folder">תיקייה חדשה</string>
+    <string name="menu_hide">הסתרה</string>
+    <string name="menu_app_info">פרטי האפליקציה</string>
+    <string name="menu_remove_folder">פירוק התיקייה</string>
+    <string name="menu_remove_from_folder">הוצאה מהתיקייה</string>
+
+    <!-- Settings -->
+    <string name="settings_title">הגדרות</string>
+    <string name="settings_on">פועל</string>
+    <string name="settings_off">כבוי</string>
+    <string name="settings_phone_apps">הצגת אפליקציות טלפון</string>
+    <string name="settings_phone_apps_hint">אפליקציות לטלפון ולטאבלט שאין להן גרסת טלוויזיה</string>
+    <string name="settings_auto_advance">מעבר אוטומטי ב״המשך צפייה״</string>
+    <string name="settings_auto_advance_hint">מעבר לכותר הבא כל 8 שניות</string>
+    <string name="settings_glass">שבירת אור בזכוכית</string>
+    <string name="settings_glass_hint">כשכבוי, הזכוכית פשוטה ושטוחה יותר</string>
+    <string name="settings_perf">מד ביצועים</string>
+    <string name="settings_perf_hint">קצב פריימים וזיכרון בפינת המסך</string>
+    <string name="settings_hidden">אפליקציות מוסתרות</string>
+    <string name="settings_hidden_empty">אין אפליקציות מוסתרות.</string>
+    <string name="settings_hidden_hint">לחיצה על OK באפליקציה תחזיר אותה למסך.</string>
+    <string name="settings_unhide">הצגה</string>
+    <string name="settings_about">אודות</string>
+    <string name="about_version">גרסה %1$s (%2$s)</string>
 </resources>

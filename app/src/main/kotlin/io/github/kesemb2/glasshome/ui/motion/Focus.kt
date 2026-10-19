@@ -3,18 +3,32 @@ package io.github.kesemb2.glasshome.ui.motion
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.ViewConfiguration
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector2D
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -26,9 +40,13 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.round
 import io.github.kesemb2.glasshome.ui.glass.asPath
 import io.github.kesemb2.glasshome.ui.theme.Springs
 import kotlinx.coroutines.launch
@@ -68,8 +86,11 @@ data class FocusStyle(
         /** App cards and posters. */
         val Card = FocusStyle(1.12f, 1.06f, 2.5f, 0.dp, 18.dp, sweep = true)
 
-        /** Glass pill buttons (Play, menu entries). */
+        /** Glass pill buttons (Play, the settings button). */
         val Button = FocusStyle(1.08f, 1.0f, 1.5f, 0.dp, 12.dp, sweep = true)
+
+        /** Rows inside menus and settings: barely grow, so they stay inside their panel. */
+        val Row = FocusStyle(1.03f, 1.0f, 0f, 0.dp, 6.dp, sweep = false)
     }
 }
 
@@ -163,6 +184,7 @@ fun Modifier.tvClickable(
     val click by rememberUpdatedState(onClick)
     val longClick by rememberUpdatedState(onLongClick)
     val state = remember { PressState() }
+    val allowed = LocalFocusAllowed.current
 
     onKeyEvent { event ->
         if (!event.isSelect()) return@onKeyEvent false
@@ -191,8 +213,43 @@ fun Modifier.tvClickable(
             }
             else -> false
         }
-    }.focusable(interactionSource = interactionSource)
+    }.focusProperties { canFocus = allowed }.focusable(interactionSource = interactionSource)
 }
+
+/** False under an open overlay: nothing there can take focus, so the D-pad stays inside the overlay. */
+val LocalFocusAllowed = compositionLocalOf { true }
+
+/**
+ * Animates an element to its new place when its parent lays it out somewhere else (reordering, move mode).
+ * Works in absolute coordinates, so it is correct in RTL too.
+ */
+fun Modifier.animatePlacement(): Modifier = composed {
+    val scope = rememberCoroutineScope()
+    var target by remember { mutableStateOf<IntOffset?>(null) }
+    val animatable = remember { mutableStateOf<Animatable<IntOffset, AnimationVector2D>?>(null) }
+    onPlaced { target = it.positionInParent().round() }
+        .absoluteOffset {
+            val to = target ?: return@absoluteOffset IntOffset.Zero
+            val anim = animatable.value ?: Animatable(to, IntOffset.VectorConverter).also { animatable.value = it }
+            if (anim.targetValue != to) scope.launch { anim.animateTo(to, Springs.focus()) }
+            anim.value - to
+        }
+}
+
+/** The small wiggle of a card being moved; the only repeating animation, running only during move mode. */
+fun Modifier.wiggle(): Modifier = composed {
+    val transition = rememberInfiniteTransition(label = "wiggle")
+    val angle = transition.animateFloat(
+        initialValue = -WIGGLE_DEGREES,
+        targetValue = WIGGLE_DEGREES,
+        animationSpec = infiniteRepeatable(tween(WIGGLE_HALF_MS, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "wiggleAngle",
+    )
+    graphicsLayer { rotationZ = angle.value }
+}
+
+private const val WIGGLE_DEGREES = 1.6f
+private const val WIGGLE_HALF_MS = 140
 
 private class PressState {
     var active = false

@@ -15,8 +15,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import io.github.kesemb2.glasshome.data.settings.AppSettings
 import io.github.kesemb2.glasshome.data.watchnext.WatchNextAccess
+import io.github.kesemb2.glasshome.ui.home.AppsController
 import io.github.kesemb2.glasshome.ui.home.HomeController
+import io.github.kesemb2.glasshome.ui.home.HomeNav
 import io.github.kesemb2.glasshome.ui.home.HomeScreen
 import io.github.kesemb2.glasshome.ui.motion.FocusTravel
 import io.github.kesemb2.glasshome.ui.theme.GlassTypography
@@ -28,6 +31,8 @@ class MainActivity : ComponentActivity() {
 
     private val scope = MainScope()
     private lateinit var controller: HomeController
+    private lateinit var apps: AppsController
+    private val nav = HomeNav()
 
     private val visible = mutableStateOf(false)
     private val resumed = mutableStateOf(false)
@@ -39,12 +44,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        controller = HomeController(application as GlassHomeApp, scope)
+        val app = application as GlassHomeApp
+        controller = HomeController(app, scope)
+        apps = AppsController(app, scope, AppSettings(app))
         setContent {
             val typography = remember { GlassTypography.create(this) }
             CompositionLocalProvider(LocalGlassType provides typography) {
                 HomeScreen(
                     controller = controller,
+                    apps = apps,
+                    nav = nav,
                     visible = visible.value,
                     resumed = resumed.value,
                     lastKeyAt = { lastKeyAt.longValue },
@@ -59,6 +68,7 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         visible.value = true
         controller.onStart()
+        apps.onStart()
         if (!askedThisSession) requestWatchNextAccess(fromButton = false)
     }
 
@@ -76,6 +86,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         visible.value = false
         controller.onStop()
+        apps.onStop()
         super.onStop()
     }
 

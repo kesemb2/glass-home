@@ -6,7 +6,7 @@ plugins {
 }
 
 // Build identity. CI passes the GitHub run number, so every build installs over the previous one.
-val baseVersion = "0.1"
+val baseVersion = "0.2"
 val buildNumber = System.getenv("BUILD_NUMBER")?.toIntOrNull() ?: 1
 val gitSha = System.getenv("GITHUB_SHA")?.take(7) ?: "local"
 

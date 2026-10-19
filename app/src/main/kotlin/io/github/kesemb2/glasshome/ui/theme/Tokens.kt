@@ -43,6 +43,7 @@ object Shapes {
     val Card = ContinuousRoundedShape(16.dp)
     val Shelf = ContinuousRoundedShape(28.dp)
     val Menu = ContinuousRoundedShape(24.dp)
+    val Row = ContinuousRoundedShape(14.dp)
 }
 
 /** Springs only; motion in this app is never a linear tween. */
@@ -53,6 +54,9 @@ object Springs {
     /** Hero cross-fade, parallax and text in/out. */
     fun <T> content(visibilityThreshold: T? = null): SpringSpec<T> =
         spring(dampingRatio = 0.9f, stiffness = 200f, visibilityThreshold = visibilityThreshold)
+
+    /** The home screen scrolling between the hero and the app grid; critically damped, so it never bounces. */
+    fun <T> camera(): SpringSpec<T> = spring(dampingRatio = 1f, stiffness = 300f)
 
     /** Menus and folders scaling in from their anchor. */
     fun <T> overlay(): SpringSpec<T> = spring(dampingRatio = 0.8f, stiffness = 500f)
