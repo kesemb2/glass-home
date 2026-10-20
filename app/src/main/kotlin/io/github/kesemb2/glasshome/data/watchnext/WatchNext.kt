@@ -28,6 +28,8 @@ data class WatchNextEntry(
     val internalProviderId: String?,
     val contentId: String?,
     val lastEngagementMillis: Long,
+    /** CONTINUE (watching it now), NEXT (the next episode), NEW or WATCHLIST; null when the app leaves it out. */
+    val watchNextType: Int? = null,
 ) {
     /** Identifies "this entry at this point of watching": dismissing hides it until the app records new engagement. */
     val dismissKey: String get() = "$packageName|${internalProviderId ?: title}|$lastEngagementMillis"
@@ -41,8 +43,12 @@ data class WatchNextEntry(
         const val TYPE_TV_SEASON = 2
         const val TYPE_TV_EPISODE = 3
         const val ASPECT_RATIO_16_9 = 0
+        const val WATCH_NEXT_CONTINUE = 0
     }
 }
+
+/** Where playback stands, in milliseconds. */
+data class Playback(val positionMillis: Long, val durationMillis: Long)
 
 /** Pure selection rules, unit-tested. */
 object WatchNextRules {
@@ -50,6 +56,35 @@ object WatchNextRules {
 
     /** Some apps write seconds instead of milliseconds. */
     fun normalizeEpochMillis(value: Long): Long = if (value in 1 until 10_000_000_000L) value * 1000 else value
+
+    /** No video in Watch Next is shorter than this; a shorter duration was written in seconds. */
+    private const val MIN_DURATION_MILLIS = 60_000L
+
+    /** The runtime in milliseconds (some apps write seconds), or 0 when unknown. */
+    fun durationMillis(entry: WatchNextEntry): Long {
+        val d = entry.durationMillis
+        return if (d in 1 until MIN_DURATION_MILLIS) d * 1000 else d.coerceAtLeast(0)
+    }
+
+    /**
+     * Playback progress worth showing, or null. Only for rows the app marks as being watched (CONTINUE): a NEXT,
+     * NEW or WATCHLIST row can still carry the position of the previous episode, which showed "1 min left" on an
+     * episode just started. Durations written in seconds are converted (the position with them, when it fits);
+     * a position past the end means the numbers do not belong together, and nothing is shown.
+     */
+    fun playback(entry: WatchNextEntry): Playback? {
+        val type = entry.watchNextType
+        if (type != null && type != WatchNextEntry.WATCH_NEXT_CONTINUE) return null
+        var duration = entry.durationMillis
+        var position = entry.positionMillis
+        if (duration <= 0 || position <= 0) return null
+        if (duration < MIN_DURATION_MILLIS) {
+            duration *= 1000
+            if (position <= entry.durationMillis) position *= 1000
+        }
+        if (position > duration + duration / 20) return null
+        return Playback(position.coerceAtMost(duration), duration)
+    }
 
     fun select(
         entries: List<WatchNextEntry>,
@@ -175,6 +210,7 @@ class WatchNextRepository(private val context: Context) {
             internalProviderId = string(COLUMN_INTERNAL_PROVIDER_ID),
             contentId = string(COLUMN_CONTENT_ID),
             lastEngagementMillis = WatchNextRules.normalizeEpochMillis(long(COLUMN_LAST_ENGAGEMENT_TIME_UTC_MILLIS) ?: 0L),
+            watchNextType = int(COLUMN_WATCH_NEXT_TYPE),
         )
     }
 
@@ -203,5 +239,6 @@ class WatchNextRepository(private val context: Context) {
         const val COLUMN_CONTENT_ID = "content_id"
         const val COLUMN_BROWSABLE = "browsable"
         const val COLUMN_LAST_ENGAGEMENT_TIME_UTC_MILLIS = "last_engagement_time_utc_millis"
+        const val COLUMN_WATCH_NEXT_TYPE = "watch_next_type"
     }
 }

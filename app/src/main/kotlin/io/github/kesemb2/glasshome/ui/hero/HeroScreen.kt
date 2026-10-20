@@ -79,6 +79,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -163,6 +164,8 @@ const val GRID_DIM = 0.4f
  * glass there. The whole backdrop is recorded into [backdropLayer], which live glass draws again behind itself.
  * The text ends [contentBottom] above the screen's bottom edge (above the favorites shelf).
  * [scrimColor] (Settings › Gradient colour, one of [ScrimColors.KEYS]) is what the scrims and that darkening fade to.
+ * [buttonScale] sizes Play (Settings › Play button size); [diagnostics] (with the performance overlay) adds the raw
+ * Watch Next numbers of the item under its details.
  * [focusModifier] goes on Play (or Allow), before its focus target.
  */
 @Composable
@@ -175,7 +178,9 @@ fun HeroScreen(
     contentBottom: Dp,
     logoScale: Float,
     textScale: Float,
+    buttonScale: Float,
     scrimColor: String,
+    diagnostics: Boolean,
     gridGlass: GlassBackdrop,
     backdropLayer: GraphicsLayer,
     focusModifier: Modifier,
@@ -339,13 +344,14 @@ fun HeroScreen(
                     contentAlignment = if (rtl) AbsoluteAlignment.BottomRight else AbsoluteAlignment.BottomLeft,
                     contentKey = { it.key },
                     label = "heroText",
-                ) { target -> HeroText(target, rtl, heroFocused, logoScale, textScale) }
+                ) { target -> HeroText(target, rtl, heroFocused, logoScale, textScale, diagnostics) }
                 Spacer(Modifier.height(Spacing.XL))
                 GlassButton(
                     text = stringResource(if (item.progress != null) R.string.hero_resume else R.string.hero_play),
                     icon = R.drawable.ic_play,
                     onClick = { onPlay(item) },
                     onLongClick = { menuOpen = true },
+                    scale = buttonScale,
                     modifier = focusModifier
                         .onFocusChanged { heroFocused = it.isFocused }
                         .onKeyEvent { event ->
@@ -367,7 +373,8 @@ fun HeroScreen(
                     selected = index,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = Spacing.ScreenHorizontal, bottom = contentBottom + 14.dp),
+                        // Level with Play's middle (Play is 48 dp × its size high, the dots 20 dp).
+                        .padding(end = Spacing.ScreenHorizontal, bottom = contentBottom + 24.dp * buttonScale - 10.dp),
                 )
             }
         } else if (state.loaded) {
@@ -383,7 +390,7 @@ fun HeroScreen(
                 },
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = Spacing.ScreenHorizontal, bottom = contentBottom + 60.dp),
+                    .padding(start = Spacing.ScreenHorizontal, bottom = contentBottom + 48.dp * buttonScale + 12.dp),
             )
         }
     }
@@ -636,7 +643,14 @@ private fun Modifier.stagger(progress: Animatable<Float, AnimationVector1D>, off
  * ([logoScale] for the logo or title, [textScale] for the rest).
  */
 @Composable
-private fun HeroText(item: HeroItem, rtl: Boolean, showDetails: Boolean, logoScale: Float, textScale: Float) {
+private fun HeroText(
+    item: HeroItem,
+    rtl: Boolean,
+    showDetails: Boolean,
+    logoScale: Float,
+    textScale: Float,
+    diagnostics: Boolean,
+) {
     val type = LocalGlassType.current
     val offsetPx = with(LocalDensity.current) { 18.dp.toPx() } * (if (rtl) -1f else 1f)
     val metaStyle = type.callout.copy(color = GlassColors.TextSecondary, fontSize = META_SIZE * textScale)
@@ -660,7 +674,7 @@ private fun HeroText(item: HeroItem, rtl: Boolean, showDetails: Boolean, logoSca
             if (item.season == null && item.episode == null) {
                 item.year?.let { add(it) }
                 if (item.media == MediaHint.MOVIE) {
-                    HeroFormat.duration(item.entry.durationMillis)?.let { (h, m) ->
+                    HeroFormat.duration(item.runtimeMillis)?.let { (h, m) ->
                         add(
                             when {
                                 h > 0 && m > 0 -> stringResource(R.string.hero_duration_h_min, h, m)
@@ -680,6 +694,16 @@ private fun HeroText(item: HeroItem, rtl: Boolean, showDetails: Boolean, logoSca
                 style = metaStyle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (diagnostics) {
+            // What the app wrote to Watch Next, as is (to tell a wrong "time left" from the app's own numbers).
+            val e = item.entry
+            BasicText(
+                text = "${e.packageName} · type ${e.watchNextType ?: "-"} · position ${e.positionMillis} · " +
+                    "duration ${e.durationMillis}",
+                modifier = Modifier.widthIn(max = SYNOPSIS_WIDTH),
+                style = type.caption.copy(color = GlassColors.TextTertiary, textAlign = edge, textDirection = TextDirection.Ltr),
             )
         }
 

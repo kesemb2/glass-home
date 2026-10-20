@@ -47,6 +47,7 @@ class AppSettings(context: Context) {
     private val columns = Choice("app_columns", CardSize.DEFAULT_COLUMNS, CardSize.MIN_COLUMNS..CardSize.MAX_COLUMNS)
     private val logo = Choice("logo_percent", DEFAULT_LOGO_PERCENT, LOGO_PERCENTS.first()..LOGO_PERCENTS.last())
     private val text = Choice("text_percent", DEFAULT_TEXT_PERCENT, TEXT_PERCENTS.first()..TEXT_PERCENTS.last())
+    private val button = Choice("button_percent", DEFAULT_BUTTON_PERCENT, BUTTON_PERCENTS.first()..BUTTON_PERCENTS.last())
     private val autoAdvance = Flag("hero_auto_advance", true)
     private val perf = Flag("perf_overlay", false)
     private val homeButtonFlag = Flag(HomeSystem.KEY_HOME_BUTTON, true)
@@ -147,6 +148,13 @@ class AppSettings(context: Context) {
             text.value = v
         }
 
+    /** The hero's Play / Resume button size, percent. */
+    var buttonPercent: Int
+        get() = button.value
+        set(v) {
+            button.value = v
+        }
+
     /** The hero's gradient colour, one of [ScrimColors.KEYS]. */
     var scrimColor: String
         get() = scrim.value
@@ -183,6 +191,8 @@ class AppSettings(context: Context) {
         const val DEFAULT_LOGO_PERCENT = 70
         val TEXT_PERCENTS = listOf(80, 90, 100, 110, 120, 130)
         const val DEFAULT_TEXT_PERCENT = 100
+        val BUTTON_PERCENTS = listOf(70, 80, 90, 100, 110, 120, 130)
+        const val DEFAULT_BUTTON_PERCENT = 100
 
         val BLURS = listOf(0, 2, 4, 6, 8, 12, 16, 24, 32)
         const val DEFAULT_BLUR = 6

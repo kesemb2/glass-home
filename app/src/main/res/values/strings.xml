@@ -71,6 +71,8 @@
     <string name="settings_logo_size_hint">Continue Watching logo or title</string>
     <string name="settings_text_size">Details text size</string>
     <string name="settings_text_size_hint">Episode line, synopsis and time left</string>
+    <string name="settings_button_size">Play button size</string>
+    <string name="settings_button_size_hint">Play / Resume under the title</string>
     <string name="settings_scrim">Gradient color</string>
     <string name="settings_scrim_hint">Shading behind the Continue Watching text</string>
     <string name="scrim_black">Black</string>

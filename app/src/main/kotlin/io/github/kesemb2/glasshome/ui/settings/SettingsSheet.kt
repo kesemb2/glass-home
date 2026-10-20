@@ -198,6 +198,14 @@ private fun ColumnScope.MainPage(
             onSelect = { settings.textPercent = it },
         )
         ChoiceRow(
+            text = stringResource(R.string.settings_button_size),
+            secondary = stringResource(R.string.settings_button_size_hint),
+            options = AppSettings.BUTTON_PERCENTS,
+            selected = settings.buttonPercent,
+            label = { "$it%" },
+            onSelect = { settings.buttonPercent = it },
+        )
+        ChoiceRow(
             text = stringResource(R.string.settings_scrim),
             secondary = stringResource(R.string.settings_scrim_hint),
             options = ScrimColors.KEYS,

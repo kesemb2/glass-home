@@ -55,7 +55,7 @@ import java.util.Date
 
 /**
  * tvOS-style glass button: translucent glass at rest; when focused it scales up, lifts, and fills white
- * with dark content. Hold OK for [onLongClick].
+ * with dark content. Hold OK for [onLongClick]. [scale] sizes everything (48 dp high at 1).
  */
 @Composable
 fun GlassButton(
@@ -66,8 +66,12 @@ fun GlassButton(
     onLongClick: (() -> Unit)? = null,
     shape: Shape = Shapes.Pill,
     withGlass: Boolean = true,
+    scale: Float = 1f,
 ) {
     val type = LocalGlassType.current
+    val style = if (scale == 1f) type.headline else {
+        type.headline.copy(fontSize = type.headline.fontSize * scale, lineHeight = type.headline.lineHeight * scale)
+    }
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val pressed by interaction.collectIsPressedAsState()
@@ -88,20 +92,20 @@ fun GlassButton(
                 onDrawBehind { drawPath(path, fill.value) }
             }
             .tvClickable(interaction, onLongClick, onClick)
-            .padding(horizontal = 26.dp, vertical = 12.dp),
+            .padding(horizontal = 26.dp * scale, vertical = 12.dp * scale),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (iconPainter != null) {
             Spacer(
                 Modifier
-                    .size(20.dp)
+                    .size(20.dp * scale)
                     .drawBehind {
                         with(iconPainter) { draw(size, colorFilter = ColorFilter.tint(content.value)) }
                     },
             )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(10.dp * scale))
         }
-        BasicText(text = text, style = type.headline, color = { content.value })
+        BasicText(text = text, style = style, color = { content.value })
     }
 }
 

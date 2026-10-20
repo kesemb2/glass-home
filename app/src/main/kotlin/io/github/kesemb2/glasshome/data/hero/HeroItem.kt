@@ -8,6 +8,7 @@ import io.github.kesemb2.glasshome.data.tmdb.TmdbClient
 import io.github.kesemb2.glasshome.data.tmdb.TmdbParse
 import io.github.kesemb2.glasshome.data.tmdb.TmdbQuery
 import io.github.kesemb2.glasshome.data.watchnext.WatchNextEntry
+import io.github.kesemb2.glasshome.data.watchnext.WatchNextRules
 import java.util.Locale
 
 /** Everything the hero shows for one Watch Next entry, after merging the provider row, Nuvio extras and TMDB. */
@@ -24,6 +25,8 @@ data class HeroItem(
     val backdropUrl: String?,
     val progress: Float?,
     val remainingMillis: Long?,
+    /** The runtime in milliseconds, 0 when unknown. */
+    val runtimeMillis: Long,
     val year: String?,
     val media: MediaHint,
     val imdbId: String?,
@@ -85,9 +88,7 @@ class HeroResolver(private val tmdb: TmdbClient?) {
             entry.type == WatchNextEntry.TYPE_MOVIE || contentType == "movie" -> MediaHint.MOVIE
             else -> MediaHint.UNKNOWN
         }
-        val duration = entry.durationMillis
-        val position = entry.positionMillis.coerceAtMost(duration.takeIf { it > 0 } ?: Long.MAX_VALUE)
-        val hasProgress = duration > 0 && position > 0
+        val playback = WatchNextRules.playback(entry)
         return HeroItem(
             key = entry.stableKey,
             entry = entry,
@@ -100,8 +101,9 @@ class HeroResolver(private val tmdb: TmdbClient?) {
             logoUrl = entry.logoUri ?: nuvio?.logo,
             backdropUrl = entry.posterArtUri.takeIf { entry.posterArtAspectRatio == WatchNextEntry.ASPECT_RATIO_16_9 }
                 ?: nuvio?.backdrop,
-            progress = if (hasProgress) (position.toFloat() / duration).coerceIn(0f, 1f) else null,
-            remainingMillis = if (hasProgress) duration - position else null,
+            progress = playback?.let { (it.positionMillis.toFloat() / it.durationMillis).coerceIn(0f, 1f) },
+            remainingMillis = playback?.let { it.durationMillis - it.positionMillis },
+            runtimeMillis = WatchNextRules.durationMillis(entry),
             year = null,
             media = media,
             imdbId = TmdbParse.imdbIdIn(nuvio?.contentId, entry.contentId, entry.internalProviderId),

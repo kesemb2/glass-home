@@ -1,8 +1,10 @@
 package io.github.kesemb2.glasshome.data
 
+import io.github.kesemb2.glasshome.data.watchnext.Playback
 import io.github.kesemb2.glasshome.data.watchnext.WatchNextEntry
 import io.github.kesemb2.glasshome.data.watchnext.WatchNextRules
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class WatchNextRulesTest {
@@ -20,6 +22,38 @@ class WatchNextRulesTest {
         durationMillis = 0, positionMillis = 0, intentUri = null, internalProviderId = providerId,
         contentId = null, lastEngagementMillis = engagement,
     )
+
+    private fun watched(position: Long, duration: Long, type: Int? = WatchNextEntry.WATCH_NEXT_CONTINUE) =
+        entry(1, engagement = 1).copy(positionMillis = position, durationMillis = duration, watchNextType = type)
+
+    @Test
+    fun playbackInMilliseconds() {
+        assertEquals(Playback(120_000, 2_700_000), WatchNextRules.playback(watched(120_000, 2_700_000)))
+        assertEquals(Playback(120_000, 2_700_000), WatchNextRules.playback(watched(120_000, 2_700_000, type = null)))
+    }
+
+    @Test
+    fun playbackInSecondsIsConverted() {
+        assertEquals(Playback(120_000, 2_700_000), WatchNextRules.playback(watched(120, 2_700)))
+        // Duration in seconds, position already in milliseconds.
+        assertEquals(Playback(120_000, 2_700_000), WatchNextRules.playback(watched(120_000, 2_700)))
+        assertEquals(2_700_000L, WatchNextRules.durationMillis(watched(0, 2_700)))
+        assertEquals(5_400_000L, WatchNextRules.durationMillis(watched(0, 5_400_000)))
+    }
+
+    @Test
+    fun onlyRowsBeingWatchedShowProgress() {
+        // A NEXT row (the next episode) can carry the previous episode's position: no "1 min left" on it.
+        assertNull(WatchNextRules.playback(watched(2_640_000, 2_700_000, type = 1)))
+        assertNull(WatchNextRules.playback(watched(2_640_000, 2_700_000, type = 3)))
+    }
+
+    @Test
+    fun positionPastTheEndShowsNothing() {
+        assertNull(WatchNextRules.playback(watched(5_000_000, 2_700_000)))
+        assertEquals(Playback(2_700_000, 2_700_000), WatchNextRules.playback(watched(2_710_000, 2_700_000)))
+        assertNull(WatchNextRules.playback(watched(0, 2_700_000)))
+    }
 
     @Test
     fun secondsAreNormalisedToMilliseconds() {

@@ -67,6 +67,8 @@
     <string name="settings_logo_size_hint">הלוגו או השם ב״המשך צפייה״</string>
     <string name="settings_text_size">גודל טקסט הפרטים</string>
     <string name="settings_text_size_hint">שורת הפרק, התקציר והזמן שנותר</string>
+    <string name="settings_button_size">גודל כפתור הצפייה</string>
+    <string name="settings_button_size_hint">״הפעלה״ / ״המשך צפייה״ מתחת לשם</string>
     <string name="settings_scrim">צבע הגרדיאנט</string>
     <string name="settings_scrim_hint">ההצללה מאחורי הטקסט ב״המשך צפייה״</string>
     <string name="scrim_black">שחור</string>
