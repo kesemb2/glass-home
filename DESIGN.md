@@ -250,7 +250,10 @@ The page, top to bottom (960 × 540 dp screen):
   with "42 min left" (12 sp) expand in between (spring, fade). Progress and time left come from the app's Watch
   Next row and are shown only when they make sense: for rows marked as being watched (`CONTINUE`; a NEXT row can
   carry the previous episode's position), with durations under a minute read as seconds, and not at all when the
-  position is past the end. With the performance overlay on, the row's raw numbers show under the details. The source app is not shown. Page dots: glass pill
+  position is past the end. A "duration" of exactly 100, 1 000, 10 000 or 100 000 is a scale for the fraction
+  watched (Nuvio writes every episode as 100 000 long): the bar uses the fraction and the time left comes from the
+  runtime on TMDB (the episode's, else the show's usual one); without one, only the bar shows. With the performance
+  overlay on, the row's raw numbers show under the details. The source app is not shown. Page dots: glass pill
   at the end side, level with Play.
 - **Favorites shelf**: a glass tray (28 dp corners) 896 dp wide and one card + 32 dp high, 27 dp above the bottom,
   holding one row of cards aligned with the grid columns. More scroll a card at a time; cards outside the window

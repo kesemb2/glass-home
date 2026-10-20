@@ -47,8 +47,8 @@ data class WatchNextEntry(
     }
 }
 
-/** Where playback stands, in milliseconds. */
-data class Playback(val positionMillis: Long, val durationMillis: Long)
+/** Where playback stands: the fraction watched, and the time left when the app's numbers are real times. */
+data class Playback(val fraction: Float, val remainingMillis: Long?)
 
 /** Pure selection rules, unit-tested. */
 object WatchNextRules {
@@ -60,17 +60,28 @@ object WatchNextRules {
     /** No video in Watch Next is shorter than this; a shorter duration was written in seconds. */
     private const val MIN_DURATION_MILLIS = 60_000L
 
+    /**
+     * "Durations" that are really scales for the fraction watched: Nuvio writes every episode as 100000 long and the
+     * position as its share of that (4683 = 4.7% watched). The fraction is right; the time left needs the real
+     * runtime (from TMDB).
+     */
+    private val PROGRESS_SCALES = setOf(100L, 1_000L, 10_000L, 100_000L)
+
     /** The runtime in milliseconds (some apps write seconds), or 0 when unknown. */
     fun durationMillis(entry: WatchNextEntry): Long {
         val d = entry.durationMillis
-        return if (d in 1 until MIN_DURATION_MILLIS) d * 1000 else d.coerceAtLeast(0)
+        return when {
+            d <= 0 || d in PROGRESS_SCALES -> 0
+            d < MIN_DURATION_MILLIS -> d * 1000
+            else -> d
+        }
     }
 
     /**
      * Playback progress worth showing, or null. Only for rows the app marks as being watched (CONTINUE): a NEXT,
-     * NEW or WATCHLIST row can still carry the position of the previous episode, which showed "1 min left" on an
-     * episode just started. Durations written in seconds are converted (the position with them, when it fits);
-     * a position past the end means the numbers do not belong together, and nothing is shown.
+     * NEW or WATCHLIST row can still carry the position of the previous episode. Durations written in seconds are
+     * converted (the position with them, when it fits); for a progress scale only the fraction is known; a position
+     * past the end means the numbers do not belong together, and nothing is shown.
      */
     fun playback(entry: WatchNextEntry): Playback? {
         val type = entry.watchNextType
@@ -78,12 +89,16 @@ object WatchNextRules {
         var duration = entry.durationMillis
         var position = entry.positionMillis
         if (duration <= 0 || position <= 0) return null
+        if (duration in PROGRESS_SCALES) {
+            return if (position > duration) null else Playback(position.toFloat() / duration, null)
+        }
         if (duration < MIN_DURATION_MILLIS) {
             duration *= 1000
             if (position <= entry.durationMillis) position *= 1000
         }
         if (position > duration + duration / 20) return null
-        return Playback(position.coerceAtMost(duration), duration)
+        position = position.coerceAtMost(duration)
+        return Playback(position.toFloat() / duration, duration - position)
     }
 
     fun select(

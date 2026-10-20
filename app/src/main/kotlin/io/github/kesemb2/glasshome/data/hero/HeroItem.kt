@@ -101,8 +101,8 @@ class HeroResolver(private val tmdb: TmdbClient?) {
             logoUrl = entry.logoUri ?: nuvio?.logo,
             backdropUrl = entry.posterArtUri.takeIf { entry.posterArtAspectRatio == WatchNextEntry.ASPECT_RATIO_16_9 }
                 ?: nuvio?.backdrop,
-            progress = playback?.let { (it.positionMillis.toFloat() / it.durationMillis).coerceIn(0f, 1f) },
-            remainingMillis = playback?.let { it.durationMillis - it.positionMillis },
+            progress = playback?.fraction?.coerceIn(0f, 1f),
+            remainingMillis = playback?.remainingMillis,
             runtimeMillis = WatchNextRules.durationMillis(entry),
             year = null,
             media = media,
@@ -112,17 +112,23 @@ class HeroResolver(private val tmdb: TmdbClient?) {
     }
 
     suspend fun enrich(item: HeroItem): HeroItem {
+        // The time left needs the runtime when the app only gave the fraction watched (see WatchNextRules).
+        val needsRuntime = item.runtimeMillis <= 0 && (item.progress != null || item.media == MediaHint.MOVIE)
         val needsTmdb = item.logoUrl == null || item.backdropUrl == null || item.synopsis == null ||
-            (item.media == MediaHint.MOVIE && item.year == null)
+            (item.media == MediaHint.MOVIE && item.year == null) || needsRuntime
         val art: TmdbArt? = if (needsTmdb && tmdb != null) tmdb.lookup(query(item)) else null
         val entry = item.entry
         val unknownShapePoster = entry.posterArtUri.takeIf { entry.posterArtAspectRatio == null }
         val knowsEpisode = item.season != null && item.episode != null
+        val runtime = item.runtimeMillis.takeIf { it > 0 } ?: art?.runtimeMinutes?.let { it * 60_000L } ?: 0L
         return item.copy(
             logoUrl = item.logoUrl ?: art?.logoUrl,
             backdropUrl = item.backdropUrl ?: art?.backdropUrl ?: unknownShapePoster ?: entry.thumbnailUri,
             synopsis = item.synopsis ?: art?.episodeOverview?.takeIf { knowsEpisode } ?: art?.overview,
             year = item.year ?: art?.year,
+            runtimeMillis = runtime,
+            remainingMillis = item.remainingMillis
+                ?: item.progress?.takeIf { runtime > 0 }?.let { ((1f - it) * runtime).toLong() },
             enriched = true,
         )
     }

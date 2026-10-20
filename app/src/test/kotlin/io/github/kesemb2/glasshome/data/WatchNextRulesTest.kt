@@ -26,24 +26,41 @@ class WatchNextRulesTest {
     private fun watched(position: Long, duration: Long, type: Int? = WatchNextEntry.WATCH_NEXT_CONTINUE) =
         entry(1, engagement = 1).copy(positionMillis = position, durationMillis = duration, watchNextType = type)
 
+    private fun assertPlayback(fraction: Float, remaining: Long?, actual: Playback?) {
+        requireNotNull(actual)
+        assertEquals(fraction, actual.fraction, 0.0005f)
+        assertEquals(remaining, actual.remainingMillis)
+    }
+
     @Test
     fun playbackInMilliseconds() {
-        assertEquals(Playback(120_000, 2_700_000), WatchNextRules.playback(watched(120_000, 2_700_000)))
-        assertEquals(Playback(120_000, 2_700_000), WatchNextRules.playback(watched(120_000, 2_700_000, type = null)))
+        assertPlayback(120f / 2700, 2_580_000, WatchNextRules.playback(watched(120_000, 2_700_000)))
+        assertPlayback(120f / 2700, 2_580_000, WatchNextRules.playback(watched(120_000, 2_700_000, type = null)))
     }
 
     @Test
     fun playbackInSecondsIsConverted() {
-        assertEquals(Playback(120_000, 2_700_000), WatchNextRules.playback(watched(120, 2_700)))
+        assertPlayback(120f / 2700, 2_580_000, WatchNextRules.playback(watched(120, 2_700)))
         // Duration in seconds, position already in milliseconds.
-        assertEquals(Playback(120_000, 2_700_000), WatchNextRules.playback(watched(120_000, 2_700)))
+        assertPlayback(120f / 2700, 2_580_000, WatchNextRules.playback(watched(120_000, 2_700)))
         assertEquals(2_700_000L, WatchNextRules.durationMillis(watched(0, 2_700)))
         assertEquals(5_400_000L, WatchNextRules.durationMillis(watched(0, 5_400_000)))
     }
 
     @Test
+    fun progressScaleGivesTheFractionOnly() {
+        // As Nuvio writes episodes (photographed on the TV): 4.7% watched, no real runtime.
+        assertPlayback(0.04683f, null, WatchNextRules.playback(watched(4_683, 100_000)))
+        assertPlayback(0.70522f, null, WatchNextRules.playback(watched(70_522, 100_000)))
+        assertEquals(0L, WatchNextRules.durationMillis(watched(4_683, 100_000)))
+        assertNull(WatchNextRules.playback(watched(120_000, 100_000)))
+        // Its movies carry real times.
+        assertPlayback(72_683f / 6_000_000, 6_000_000L - 72_683, WatchNextRules.playback(watched(72_683, 6_000_000)))
+    }
+
+    @Test
     fun onlyRowsBeingWatchedShowProgress() {
-        // A NEXT row (the next episode) can carry the previous episode's position: no "1 min left" on it.
+        // A NEXT row (the next episode) can carry the previous episode's position.
         assertNull(WatchNextRules.playback(watched(2_640_000, 2_700_000, type = 1)))
         assertNull(WatchNextRules.playback(watched(2_640_000, 2_700_000, type = 3)))
     }
@@ -51,7 +68,7 @@ class WatchNextRulesTest {
     @Test
     fun positionPastTheEndShowsNothing() {
         assertNull(WatchNextRules.playback(watched(5_000_000, 2_700_000)))
-        assertEquals(Playback(2_700_000, 2_700_000), WatchNextRules.playback(watched(2_710_000, 2_700_000)))
+        assertPlayback(1f, 0, WatchNextRules.playback(watched(2_710_000, 2_700_000)))
         assertNull(WatchNextRules.playback(watched(0, 2_700_000)))
     }
 

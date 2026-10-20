@@ -709,7 +709,7 @@ private fun HeroText(
 
         val progress = item.progress
         val remaining = item.remainingMillis
-        val hasDetails = item.synopsis != null || (progress != null && remaining != null)
+        val hasDetails = item.synopsis != null || progress != null
         AnimatedVisibility(
             visible = showDetails && hasDetails,
             enter = fadeIn(Springs.content()) + expandVertically(Springs.content(IntSize.VisibilityThreshold)),
@@ -726,23 +726,26 @@ private fun HeroText(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (progress != null && remaining != null) {
+                // The bar whenever the fraction watched is known; the time left only when the runtime is too.
+                if (progress != null) {
                     Spacer(Modifier.height(Spacing.M))
                     Row(
                         Modifier.stagger(rememberStagger(3), offsetPx),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         ProgressBar(progress, rtl, PROGRESS_WIDTH * textScale)
-                        Spacer(Modifier.width(8.dp))
-                        val (h, m) = HeroFormat.remaining(remaining)
-                        BasicText(
-                            text = when {
-                                h > 0 && m > 0 -> stringResource(R.string.hero_left_h_min, h, m)
-                                h > 0 -> stringResource(R.string.hero_left_h, h)
-                                else -> stringResource(R.string.hero_left_min, m)
-                            },
-                            style = captionStyle,
-                        )
+                        if (remaining != null) {
+                            Spacer(Modifier.width(8.dp))
+                            val (h, m) = HeroFormat.remaining(remaining)
+                            BasicText(
+                                text = when {
+                                    h > 0 && m > 0 -> stringResource(R.string.hero_left_h_min, h, m)
+                                    h > 0 -> stringResource(R.string.hero_left_h, h)
+                                    else -> stringResource(R.string.hero_left_min, m)
+                                },
+                                style = captionStyle,
+                            )
+                        }
                     }
                 }
             }

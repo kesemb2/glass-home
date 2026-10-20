@@ -82,7 +82,17 @@ class TmdbParseTest {
     fun yearAndCacheRoundTrip() {
         assertEquals("2008", TmdbParse.year(JSONObject("""{"first_air_date":"2008-01-20"}""")))
         assertNull(TmdbParse.year(JSONObject("""{"release_date":""}""")))
-        val art = TmdbArt("tv", 1396, "https://l", null, "Overview", null, "2008")
+        val art = TmdbArt("tv", 1396, "https://l", null, "Overview", null, "2008", runtimeMinutes = 47)
         assertEquals(art, TmdbParse.artFromJson(TmdbParse.artToJson(art)))
+        val noRuntime = art.copy(runtimeMinutes = null)
+        assertEquals(noRuntime, TmdbParse.artFromJson(TmdbParse.artToJson(noRuntime)))
+    }
+
+    @Test
+    fun runtimeFromMovieEpisodeOrShow() {
+        assertEquals(100, TmdbParse.runtime(JSONObject("""{"runtime":100}""")))
+        assertEquals(42, TmdbParse.runtime(JSONObject("""{"runtime":null,"episode_run_time":[0,42]}""")))
+        assertEquals(38, TmdbParse.runtime(JSONObject("""{"episode_run_time":[],"last_episode_to_air":{"runtime":38}}""")))
+        assertNull(TmdbParse.runtime(JSONObject("""{"runtime":0,"episode_run_time":[]}""")))
     }
 }

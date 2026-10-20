@@ -27,7 +27,7 @@ data class TmdbQuery(
     val languageIso: String,
 ) {
     val cacheKey: String
-        get() = listOf("v1", packageName, imdbId ?: title.lowercase(), media, season, episode, languageTag).joinToString("|")
+        get() = listOf("v2", packageName, imdbId ?: title.lowercase(), media, season, episode, languageTag).joinToString("|")
 }
 
 data class TmdbArt(
@@ -38,6 +38,8 @@ data class TmdbArt(
     val overview: String?,
     val episodeOverview: String?,
     val year: String?,
+    /** The episode's runtime (else the show's usual one), or the movie's; minutes. */
+    val runtimeMinutes: Int? = null,
 )
 
 /**
@@ -82,9 +84,12 @@ class TmdbClient(
         val season = q.season ?: target.season
         val episode = q.episode ?: target.episode
         var episodeOverview: String? = null
+        var runtime = TmdbParse.runtime(details)
         if (target.type == "tv" && season != null && episode != null) {
             val path = "3/tv/${target.id}/season/$season/episode/$episode"
-            episodeOverview = get(path, "language" to q.languageTag)?.let { TmdbParse.text(it, "overview") }
+            val episodeDetails = get(path, "language" to q.languageTag)
+            episodeOverview = episodeDetails?.let { TmdbParse.text(it, "overview") }
+            episodeDetails?.let(TmdbParse::runtime)?.let { runtime = it }
             if (episodeOverview == null && q.languageIso != "en") {
                 episodeOverview = get(path, "language" to "en-US")?.let { TmdbParse.text(it, "overview") }
             }
@@ -98,6 +103,7 @@ class TmdbClient(
             overview = overview,
             episodeOverview = episodeOverview,
             year = TmdbParse.year(details),
+            runtimeMinutes = runtime,
         )
     }
 
@@ -231,6 +237,18 @@ object TmdbParse {
         return IMAGE_BASE + "w1280" + path
     }
 
+    /**
+     * Runtime in minutes: a movie's or an episode's `runtime`; for a show, its usual episode length
+     * (`episode_run_time`, else the last aired episode's).
+     */
+    fun runtime(details: JSONObject): Int? {
+        details.intOrNull("runtime")?.takeIf { it > 0 }?.let { return it }
+        details.optJSONArray("episode_run_time")?.let { times ->
+            (0 until times.length()).map { times.optInt(it) }.firstOrNull { it > 0 }?.let { return it }
+        }
+        return details.optJSONObject("last_episode_to_air")?.intOrNull("runtime")?.takeIf { it > 0 }
+    }
+
     fun year(details: JSONObject): String? =
         (text(details, "release_date") ?: text(details, "first_air_date"))?.take(4)?.takeIf { it.length == 4 }
 
@@ -248,6 +266,7 @@ object TmdbParse {
         .put("overview", art.overview ?: JSONObject.NULL)
         .put("episodeOverview", art.episodeOverview ?: JSONObject.NULL)
         .put("year", art.year ?: JSONObject.NULL)
+        .put("runtime", art.runtimeMinutes ?: JSONObject.NULL)
 
     fun artFromJson(json: JSONObject): TmdbArt = TmdbArt(
         mediaType = json.getString("mediaType"),
@@ -257,6 +276,7 @@ object TmdbParse {
         overview = text(json, "overview"),
         episodeOverview = text(json, "episodeOverview"),
         year = text(json, "year"),
+        runtimeMinutes = json.intOrNull("runtime")?.takeIf { it > 0 },
     )
 
     private fun languageRank(item: JSONObject, languages: List<String>): Int {
