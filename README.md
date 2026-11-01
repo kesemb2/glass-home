@@ -58,7 +58,7 @@ screen uses. Apps decide what they publish there.
 - **Settings** (gear next to the clock): language (as on the TV, Hebrew or English), glass (live glass, blur,
   refraction, brightness, transparency, reset), app size, logo size, details text size, Play button size, gradient color (black,
   a dark tone of the current image, or a dark blue, purple, green, red, teal or brown; ‹ › on the remote changes
-  these), show phone apps, Continue Watching auto-advance, performance overlay, hidden apps (to show them again)
+  these), show phone apps, which apps appear in Continue Watching, Continue Watching auto-advance, performance overlay, hidden apps (to show them again)
   and About (version, TMDB notice).
 - **Continue Watching** shows the title's logo and episode line; the synopsis and time left appear when Play is
   focused.

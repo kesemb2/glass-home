@@ -42,6 +42,7 @@ import io.github.kesemb2.glasshome.ui.glass.glass
 import io.github.kesemb2.glasshome.ui.glass.glassShadow
 import io.github.kesemb2.glasshome.ui.hero.ScrimColors
 import io.github.kesemb2.glasshome.ui.home.AppsController
+import io.github.kesemb2.glasshome.ui.home.HomeController
 import io.github.kesemb2.glasshome.ui.home.HomeSetup
 import io.github.kesemb2.glasshome.ui.home.SettingsPage
 import io.github.kesemb2.glasshome.ui.overlay.OverlayLayer
@@ -56,6 +57,7 @@ fun SettingsSheet(
     page: SettingsPage,
     top: Boolean,
     apps: AppsController,
+    controller: HomeController,
     onPage: (SettingsPage) -> Unit,
     onLanguage: (String) -> Unit,
     homeSetup: HomeSetup,
@@ -84,6 +86,7 @@ fun SettingsSheet(
                     SettingsPage.Home -> HomePage(apps.settings, homeSetup)
                     SettingsPage.Language -> LanguagePage(apps.settings.language, onLanguage)
                     SettingsPage.Glass -> GlassPage(apps.settings)
+                    SettingsPage.Sources -> SourcesPage(apps, controller)
                     SettingsPage.Hidden -> HiddenPage(apps)
                     SettingsPage.About -> AboutPage()
                 }
@@ -237,6 +240,12 @@ private fun ColumnScope.MainPage(
             icon = R.drawable.ic_hide,
             onClick = { onPage(SettingsPage.Hidden) },
             modifier = Modifier.focusRequester(rows.getValue(SettingsPage.Hidden)),
+        )
+        MenuRow(
+            text = stringResource(R.string.settings_sources),
+            secondary = stringResource(R.string.settings_sources_hint),
+            onClick = { onPage(SettingsPage.Sources) },
+            modifier = Modifier.focusRequester(rows.getValue(SettingsPage.Sources)),
         )
         MenuRow(
             text = stringResource(R.string.settings_about),
@@ -451,6 +460,39 @@ private fun ColumnScope.HiddenPage(apps: AppsController) {
                     trailing = show,
                     icon = R.drawable.ic_show,
                     onClick = { apps.unhide(app.packageName) },
+                    modifier = if (i == 0) Modifier.focusRequester(first) else Modifier,
+                )
+            }
+        }
+    }
+}
+
+/** Which apps' rows appear in Continue Watching: every app that has rows, each switched on or off. */
+@Composable
+private fun ColumnScope.SourcesPage(apps: AppsController, controller: HomeController) {
+    val type = LocalGlassType.current
+    val first = rememberFirstFocus()
+    val on = stringResource(R.string.settings_on)
+    val off = stringResource(R.string.settings_off)
+    val sources = controller.sources
+    Title(stringResource(R.string.settings_sources))
+    if (sources.isEmpty()) {
+        BasicText(
+            text = stringResource(R.string.settings_sources_empty),
+            modifier = Modifier.padding(horizontal = 16.dp),
+            style = type.body.copy(color = GlassColors.TextSecondary),
+        )
+        return
+    }
+    Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+        sources.forEachIndexed { i, pkg ->
+            key(pkg) {
+                val shown = pkg !in controller.hiddenSources
+                MenuRow(
+                    text = apps.apps[pkg]?.label ?: pkg,
+                    secondary = pkg,
+                    trailing = if (shown) on else off,
+                    onClick = { controller.setSourceHidden(pkg, shown) },
                     modifier = if (i == 0) Modifier.focusRequester(first) else Modifier,
                 )
             }

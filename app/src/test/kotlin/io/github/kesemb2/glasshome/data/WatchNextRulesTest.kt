@@ -73,6 +73,21 @@ class WatchNextRulesTest {
     }
 
     @Test
+    fun sameShowFromTwoAppsOnceAndHiddenAppsLeftOut() {
+        val arc = entry(1, engagement = 100, pkg = "com.nuvio.tv.test", title = "Agatha", providerId = "wn_tt1_s1e8")
+            .copy(seasonNumber = "1", episodeNumber = "8")
+        val nuvio = entry(2, engagement = 200, pkg = "com.nuvio.tv", title = "Agatha", providerId = "wn_tt1_s1e8")
+            .copy(seasonNumber = "1", episodeNumber = "8")
+        val other = entry(3, engagement = 50, title = "Other")
+        val shown = WatchNextRules.select(listOf(arc, nuvio, other), ownPackage = "me", dismissed = emptySet())
+        assertEquals(listOf(2L, 3L), shown.map { it.id })
+        val withoutNuvio = WatchNextRules.select(
+            listOf(arc, nuvio, other), ownPackage = "me", dismissed = emptySet(), hiddenApps = setOf("com.nuvio.tv"),
+        )
+        assertEquals(listOf(1L, 3L), withoutNuvio.map { it.id })
+    }
+
+    @Test
     fun secondsAreNormalisedToMilliseconds() {
         assertEquals(1_700_000_000_000L, WatchNextRules.normalizeEpochMillis(1_700_000_000L))
         assertEquals(1_700_000_000_000L, WatchNextRules.normalizeEpochMillis(1_700_000_000_000L))

@@ -17,6 +17,8 @@ enum class MediaHint { MOVIE, TV, UNKNOWN }
 data class TmdbQuery(
     val packageName: String,
     val imdbId: String?,
+    /** A TMDB id the app gave directly ("tmdb:123", as the original Nuvio does). */
+    val tmdbId: Int? = null,
     val title: String,
     val media: MediaHint,
     val season: Int?,
@@ -27,7 +29,7 @@ data class TmdbQuery(
     val languageIso: String,
 ) {
     val cacheKey: String
-        get() = listOf("v2", packageName, imdbId ?: title.lowercase(), media, season, episode, languageTag).joinToString("|")
+        get() = listOf("v3", packageName, imdbId ?: tmdbId ?: title.lowercase(), media, season, episode, languageTag).joinToString("|")
 }
 
 data class TmdbArt(
@@ -40,6 +42,8 @@ data class TmdbArt(
     val year: String?,
     /** The episode's runtime (else the show's usual one), or the movie's; minutes. */
     val runtimeMinutes: Int? = null,
+    /** The episode's own still, full size. */
+    val episodeStillUrl: String? = null,
 )
 
 /**
@@ -85,11 +89,13 @@ class TmdbClient(
         val episode = q.episode ?: target.episode
         var episodeOverview: String? = null
         var runtime = TmdbParse.runtime(details)
+        var still: String? = null
         if (target.type == "tv" && season != null && episode != null) {
             val path = "3/tv/${target.id}/season/$season/episode/$episode"
             val episodeDetails = get(path, "language" to q.languageTag)
             episodeOverview = episodeDetails?.let { TmdbParse.text(it, "overview") }
             episodeDetails?.let(TmdbParse::runtime)?.let { runtime = it }
+            still = episodeDetails?.let { TmdbParse.text(it, "still_path") }?.let { TmdbParse.fullSize(it) }
             if (episodeOverview == null && q.languageIso != "en") {
                 episodeOverview = get(path, "language" to "en-US")?.let { TmdbParse.text(it, "overview") }
             }
@@ -104,10 +110,18 @@ class TmdbClient(
             episodeOverview = episodeOverview,
             year = TmdbParse.year(details),
             runtimeMinutes = runtime,
+            episodeStillUrl = still,
         )
     }
 
     private fun resolve(q: TmdbQuery): TmdbParse.Target? {
+        q.tmdbId?.let { id ->
+            when (q.media) {
+                MediaHint.MOVIE -> return TmdbParse.Target("movie", id)
+                MediaHint.TV -> return TmdbParse.Target("tv", id)
+                MediaHint.UNKNOWN -> Unit
+            }
+        }
         q.imdbId?.let { imdb ->
             get("3/find/$imdb", "external_source" to "imdb_id")?.let(TmdbParse::fromFind)?.let { return it }
         }
@@ -181,12 +195,22 @@ class TmdbClient(
 object TmdbParse {
     private const val IMAGE_BASE = "https://image.tmdb.org/t/p/"
     private val IMDB_ID = Regex("tt\\d{5,10}")
+    private val TMDB_ID = Regex("tmdb:(\\d{1,9})", RegexOption.IGNORE_CASE)
+    private val TMDB_SIZE = Regex("(image\\.tmdb\\.org/t/p/)w\\d+/")
 
     data class Target(val type: String, val id: Int, val season: Int? = null, val episode: Int? = null)
 
     /** First IMDb id ("tt" + digits) found in any of the candidates. */
     fun imdbIdIn(vararg candidates: String?): String? =
         candidates.firstNotNullOfOrNull { candidate -> candidate?.let { IMDB_ID.find(it)?.value } }
+
+    /** First TMDB id ("tmdb:" + digits) found in any of the candidates. */
+    fun tmdbIdIn(vararg candidates: String?): Int? =
+        candidates.firstNotNullOfOrNull { candidate -> candidate?.let { TMDB_ID.find(it)?.groupValues?.get(1)?.toIntOrNull() } }
+
+    /** A TMDB image path (or a TMDB image URL of any size) at full size. */
+    fun fullSize(pathOrUrl: String): String =
+        if (pathOrUrl.startsWith("/")) IMAGE_BASE + "original" + pathOrUrl else pathOrUrl.replace(TMDB_SIZE, "$1original/")
 
     fun fromFind(json: JSONObject): Target? {
         json.optJSONArray("movie_results")?.optJSONObject(0)?.let { return Target("movie", it.getInt("id")) }
@@ -267,6 +291,7 @@ object TmdbParse {
         .put("episodeOverview", art.episodeOverview ?: JSONObject.NULL)
         .put("year", art.year ?: JSONObject.NULL)
         .put("runtime", art.runtimeMinutes ?: JSONObject.NULL)
+        .put("still", art.episodeStillUrl ?: JSONObject.NULL)
 
     fun artFromJson(json: JSONObject): TmdbArt = TmdbArt(
         mediaType = json.getString("mediaType"),
@@ -277,6 +302,7 @@ object TmdbParse {
         episodeOverview = text(json, "episodeOverview"),
         year = text(json, "year"),
         runtimeMinutes = json.intOrNull("runtime")?.takeIf { it > 0 },
+        episodeStillUrl = text(json, "still"),
     )
 
     private fun languageRank(item: JSONObject, languages: List<String>): Int {

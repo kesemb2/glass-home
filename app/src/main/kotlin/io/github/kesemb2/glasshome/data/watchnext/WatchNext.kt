@@ -101,15 +101,24 @@ object WatchNextRules {
         return Playback(position.toFloat() / duration, duration - position)
     }
 
+    /**
+     * The rows to show, newest first: not this app's, not dismissed, not from a [hiddenApps] app, and each title
+     * (with its season and episode) once, even when two apps list it (two builds of the same player).
+     */
     fun select(
         entries: List<WatchNextEntry>,
         ownPackage: String,
         dismissed: Set<String>,
+        hiddenApps: Set<String> = emptySet(),
         limit: Int = MAX_ENTRIES,
     ): List<WatchNextEntry> = entries.asSequence()
-        .filter { it.packageName != ownPackage && it.title.isNotBlank() && it.dismissKey !in dismissed }
+        .filter {
+            it.packageName != ownPackage && it.packageName !in hiddenApps && it.title.isNotBlank() &&
+                it.dismissKey !in dismissed
+        }
         .sortedWith(compareByDescending<WatchNextEntry> { it.lastEngagementMillis }.thenByDescending { it.id })
         .distinctBy { it.stableKey }
+        .distinctBy { listOf(it.title.lowercase().filter(Char::isLetterOrDigit), it.seasonNumber, it.episodeNumber) }
         .take(limit)
         .toList()
 }
@@ -169,6 +178,14 @@ class WatchNextRepository(private val context: Context) {
     }
 
     fun dismissedKeys(): Set<String> = readDismissed().toSet()
+
+    /** Apps whose rows the user chose not to show (Settings › Continue Watching apps). */
+    fun hiddenApps(): Set<String> = prefs.getStringSet(KEY_HIDDEN_APPS, null).orEmpty().toSet()
+
+    fun setAppHidden(packageName: String, hidden: Boolean) {
+        val apps = hiddenApps().let { if (hidden) it + packageName else it - packageName }
+        prefs.edit().putStringSet(KEY_HIDDEN_APPS, apps).apply()
+    }
 
     /** Hides an entry locally; the provider is never modified. */
     fun dismiss(entry: WatchNextEntry) {
@@ -231,6 +248,7 @@ class WatchNextRepository(private val context: Context) {
 
     private companion object {
         const val KEY_DISMISSED = "dismissed"
+        const val KEY_HIDDEN_APPS = "hidden_apps"
         const val MAX_DISMISSED = 200
 
         // Column names of TvContract.WatchNextPrograms (stable provider schema).

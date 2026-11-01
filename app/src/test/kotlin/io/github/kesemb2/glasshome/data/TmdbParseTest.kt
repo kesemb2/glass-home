@@ -95,4 +95,16 @@ class TmdbParseTest {
         assertEquals(38, TmdbParse.runtime(JSONObject("""{"episode_run_time":[],"last_episode_to_air":{"runtime":38}}""")))
         assertNull(TmdbParse.runtime(JSONObject("""{"runtime":0,"episode_run_time":[]}""")))
     }
+
+    @Test
+    fun tmdbIdsAndFullSizeImages() {
+        assertEquals(1396, TmdbParse.tmdbIdIn(null, "tmdb:1396", "tt0903747"))
+        assertNull(TmdbParse.tmdbIdIn("tt0903747", null))
+        assertEquals(
+            "https://image.tmdb.org/t/p/original/abc.jpg",
+            TmdbParse.fullSize("https://image.tmdb.org/t/p/w300/abc.jpg"),
+        )
+        assertEquals("https://image.tmdb.org/t/p/original/abc.jpg", TmdbParse.fullSize("/abc.jpg"))
+        assertEquals("https://example.com/w300/x.jpg", TmdbParse.fullSize("https://example.com/w300/x.jpg"))
+    }
 }

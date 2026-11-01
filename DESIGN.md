@@ -253,7 +253,12 @@ The page, top to bottom (960 × 540 dp screen):
   position is past the end. A "duration" of exactly 100, 1 000, 10 000 or 100 000 is a scale for the fraction
   watched (Nuvio writes every episode as 100 000 long): the bar uses the fraction and the time left comes from the
   runtime on TMDB (the episode's, else the show's usual one); without one, only the bar shows. With the performance
-  overlay on, the row's raw numbers show under the details. The source app is not shown. Page dots: glass pill
+  overlay on, the row's raw numbers show under the details.
+- **Continue Watching sources**: each title (with its season and episode) shows once even when two apps list it
+  (two builds of one player), the newest row winning; Settings › Continue Watching apps switches any app's rows
+  off. For Nuvio rows an id written as `tmdb:123` is looked up directly; a Nuvio episode's backdrop is the TMDB
+  episode still at full size (Nuvio's own art for an episode is its add-on's small thumbnail), and TMDB image URLs
+  of any size are used at full size. The source app is not shown. Page dots: glass pill
   at the end side, level with Play.
 - **Favorites shelf**: a glass tray (28 dp corners) 896 dp wide and one card + 32 dp high, 27 dp above the bottom,
   holding one row of cards aligned with the grid columns. More scroll a card at a time; cards outside the window

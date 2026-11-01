@@ -51,6 +51,12 @@ class HomeController(private val app: GlassHomeApp, private val scope: Coroutine
     var hero by mutableStateOf(HeroUiState())
         private set
 
+    /** Apps that have Watch Next rows, shown or not, and those the user hid (Settings › Continue Watching apps). */
+    var sources by mutableStateOf<List<String>>(emptyList())
+        private set
+    var hiddenSources by mutableStateOf<Set<String>>(emptySet())
+        private set
+
     private val repository = WatchNextRepository(app)
     private val resolver = HeroResolver(app.tmdb)
     private val enriched = ConcurrentHashMap<String, HeroItem>()
@@ -84,7 +90,10 @@ class HomeController(private val app: GlassHomeApp, private val scope: Coroutine
             val permissions = WatchNextAccess.status(app)
             val result = withContext(Dispatchers.IO) { runCatching { repository.queryAll() } }
             val entries = result.getOrDefault(emptyList())
-            val selected = WatchNextRules.select(entries, app.packageName, repository.dismissedKeys())
+            val hidden = repository.hiddenApps()
+            hiddenSources = hidden
+            sources = entries.map { it.packageName }.filter { it != app.packageName }.distinct().sorted()
+            val selected = WatchNextRules.select(entries, app.packageName, repository.dismissedKeys(), hidden)
             val items = withContext(Dispatchers.IO) {
                 selected.mapNotNull { entry ->
                     enriched[entry.dismissKey] ?: try {
@@ -117,6 +126,12 @@ class HomeController(private val app: GlassHomeApp, private val scope: Coroutine
                 hero = hero.copy(items = hero.items.map { if (it.key == full.key) full else it })
             }
         }
+    }
+
+    fun setSourceHidden(packageName: String, hidden: Boolean) {
+        repository.setAppHidden(packageName, hidden)
+        hiddenSources = repository.hiddenApps()
+        refresh()
     }
 
     /** "Remove from row": hidden locally, the provider is left untouched. */

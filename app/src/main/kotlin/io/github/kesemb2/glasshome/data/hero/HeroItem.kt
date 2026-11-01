@@ -30,6 +30,7 @@ data class HeroItem(
     val year: String?,
     val media: MediaHint,
     val imdbId: String?,
+    val tmdbId: Int? = null,
     val enriched: Boolean,
 )
 
@@ -71,7 +72,9 @@ data class NuvioExtras(
  * Builds [HeroItem]s. [base] is immediate (provider data and Nuvio extras); [enrich] fills
  * gaps from TMDB in the documented order:
  * - logo: entry logo URI, Nuvio logo, TMDB logo, else the title is drawn as text;
- * - backdrop: 16:9 poster art, Nuvio backdrop, TMDB backdrop, poster of unknown shape, thumbnail;
+ * - backdrop: 16:9 poster art, Nuvio backdrop, TMDB backdrop, poster of unknown shape, thumbnail; for a Nuvio
+ *   episode the TMDB episode still (full size) first, because Nuvio's own art for an episode is the add-on's small
+ *   thumbnail, which looked pixelated full screen; TMDB images of any size are taken at full size;
  * - synopsis: short description, long description, TMDB (episode overview when season/episode are known).
  */
 class HeroResolver(private val tmdb: TmdbClient?) {
@@ -99,14 +102,19 @@ class HeroResolver(private val tmdb: TmdbClient?) {
             synopsis = listOf(entry.shortDescription, entry.longDescription)
                 .firstOrNull { !it.isNullOrBlank() && !it.equals(entry.title, ignoreCase = true) },
             logoUrl = entry.logoUri ?: nuvio?.logo,
-            backdropUrl = entry.posterArtUri.takeIf { entry.posterArtAspectRatio == WatchNextEntry.ASPECT_RATIO_16_9 }
-                ?: nuvio?.backdrop,
+            backdropUrl = if (nuvio != null && season != null && episode != null) {
+                null // Filled in by enrich: the TMDB still, else this art.
+            } else {
+                (entry.posterArtUri.takeIf { entry.posterArtAspectRatio == WatchNextEntry.ASPECT_RATIO_16_9 } ?: nuvio?.backdrop)
+                    ?.let(TmdbParse::fullSize)
+            },
             progress = playback?.fraction?.coerceIn(0f, 1f),
             remainingMillis = playback?.remainingMillis,
             runtimeMillis = WatchNextRules.durationMillis(entry),
             year = null,
             media = media,
             imdbId = TmdbParse.imdbIdIn(nuvio?.contentId, entry.contentId, entry.internalProviderId),
+            tmdbId = TmdbParse.tmdbIdIn(nuvio?.contentId, entry.contentId, entry.internalProviderId),
             enriched = false,
         )
     }
@@ -121,9 +129,16 @@ class HeroResolver(private val tmdb: TmdbClient?) {
         val unknownShapePoster = entry.posterArtUri.takeIf { entry.posterArtAspectRatio == null }
         val knowsEpisode = item.season != null && item.episode != null
         val runtime = item.runtimeMillis.takeIf { it > 0 } ?: art?.runtimeMinutes?.let { it * 60_000L } ?: 0L
+        // A Nuvio episode's own art (its add-on's thumbnail), when TMDB has nothing better.
+        val ownArt = if (NuvioExtras.isNuvio(entry.packageName)) {
+            (entry.posterArtUri ?: NuvioExtras.parse(entry.intentUri)?.backdrop)?.let(TmdbParse::fullSize)
+        } else {
+            null
+        }
         return item.copy(
             logoUrl = item.logoUrl ?: art?.logoUrl,
-            backdropUrl = item.backdropUrl ?: art?.backdropUrl ?: unknownShapePoster ?: entry.thumbnailUri,
+            backdropUrl = item.backdropUrl ?: art?.episodeStillUrl?.takeIf { knowsEpisode } ?: art?.backdropUrl ?: ownArt
+                ?: unknownShapePoster ?: entry.thumbnailUri,
             synopsis = item.synopsis ?: art?.episodeOverview?.takeIf { knowsEpisode } ?: art?.overview,
             year = item.year ?: art?.year,
             runtimeMillis = runtime,
@@ -138,6 +153,7 @@ class HeroResolver(private val tmdb: TmdbClient?) {
         return TmdbQuery(
             packageName = item.entry.packageName,
             imdbId = item.imdbId,
+            tmdbId = item.tmdbId,
             title = item.title,
             media = item.media,
             season = item.season,

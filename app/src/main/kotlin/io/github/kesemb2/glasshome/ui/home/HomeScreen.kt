@@ -442,6 +442,7 @@ private fun HomeContent(
                         page = overlay.page,
                         top = top,
                         apps = apps,
+                        controller = controller,
                         onPage = { page -> nav.replaceTop(overlay.copy(page = page)) },
                         onLanguage = onLanguage,
                         homeSetup = homeSetup,
