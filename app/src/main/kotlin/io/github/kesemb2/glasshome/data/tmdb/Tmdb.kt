@@ -56,14 +56,21 @@ class TmdbClient(
     private val cacheDir: File,
 ) {
 
+    /** The last failed request's error, for the diagnostics line (with the performance overlay). */
+    @Volatile
+    var lastError: String? = null
+        private set
+
     suspend fun lookup(query: TmdbQuery): TmdbArt? = withContext(Dispatchers.IO) {
         val file = File(cacheDir, sha1(query.cacheKey) + ".json")
         readCache(file)?.let { return@withContext it.art }
         val art = try {
             fetch(query)
-        } catch (_: IOException) {
+        } catch (e: IOException) {
+            lastError = e.message ?: e.javaClass.simpleName
             return@withContext null // Offline or server error: try again next time, cache nothing.
-        } catch (_: JSONException) {
+        } catch (e: JSONException) {
+            lastError = "JSON: ${e.message}"
             null
         }
         writeCache(file, art)

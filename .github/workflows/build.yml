@@ -49,6 +49,14 @@ jobs:
             echo "::warning::No signing secrets available: this build produces an unsigned APK that cannot be installed."
           fi
 
+      - name: Check TMDB token
+        run: |
+          if [ -n "$TMDB_API_TOKEN" ]; then
+            echo "TMDB token present (${#TMDB_API_TOKEN} characters)."
+          else
+            echo "::warning::Secret TMDB_API_TOKEN is not set: the app is built without TMDB (no synopses, logos or runtimes from it)."
+          fi
+
       - name: Unit tests
         shell: bash
         run: ./gradlew test 2>&1 | tee -a build.log

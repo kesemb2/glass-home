@@ -701,7 +701,8 @@ private fun HeroText(
             val e = item.entry
             BasicText(
                 text = "${e.packageName} · type ${e.watchNextType ?: "-"} · position ${e.positionMillis} · " +
-                    "duration ${e.durationMillis}",
+                    "duration ${e.durationMillis}\nids ${item.imdbId ?: "-"} / ${item.tmdbId ?: "-"} · " +
+                    "S${item.season ?: "-"}E${item.episode ?: "-"} · TMDB: ${item.tmdbStatus ?: "pending"}",
                 modifier = Modifier.widthIn(max = SYNOPSIS_WIDTH),
                 style = type.caption.copy(color = GlassColors.TextTertiary, textAlign = edge, textDirection = TextDirection.Ltr),
             )

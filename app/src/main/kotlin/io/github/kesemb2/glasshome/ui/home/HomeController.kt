@@ -119,8 +119,8 @@ class HomeController(private val app: GlassHomeApp, private val scope: Coroutine
                     resolver.enrich(item)
                 } catch (e: CancellationException) {
                     throw e
-                } catch (_: Exception) {
-                    item.copy(enriched = true)
+                } catch (e: Exception) {
+                    item.copy(enriched = true, tmdbStatus = "error ${e.javaClass.simpleName}: ${e.message}")
                 }
                 enriched[item.entry.dismissKey] = full
                 hero = hero.copy(items = hero.items.map { if (it.key == full.key) full else it })

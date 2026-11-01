@@ -32,6 +32,8 @@ data class HeroItem(
     val imdbId: String?,
     val tmdbId: Int? = null,
     val enriched: Boolean,
+    /** What the TMDB lookup gave, for the diagnostics line. */
+    val tmdbStatus: String? = null,
 )
 
 /** Extras Nuvio (com.nuvio.tv*) packs into its Watch Next intent URI. */
@@ -145,6 +147,13 @@ class HeroResolver(private val tmdb: TmdbClient?) {
             remainingMillis = item.remainingMillis
                 ?: item.progress?.takeIf { runtime > 0 }?.let { ((1f - it) * runtime).toLong() },
             enriched = true,
+            tmdbStatus = when {
+                !needsTmdb -> "not needed"
+                tmdb == null -> "no token in this build"
+                art == null -> "not found (${tmdb.lastError ?: "no match"})"
+                else -> "${art.mediaType} ${art.id}: overview ${if (art.overview != null) "yes" else "no"}, " +
+                    "episode ${if (art.episodeOverview != null) "yes" else "no"}"
+            },
         )
     }
 
