@@ -47,7 +47,7 @@ data class TmdbArt(
 )
 
 /**
- * Minimal TMDB v3 client (Read Access Token as Bearer). Every lookup is cached on disk as a small JSON file
+ * Minimal TMDB v3 client (a Read Access Token as Bearer, or a v3 API key). Every lookup is cached on disk as a small JSON file
  * keyed by package + id/title, so each title costs network calls once per two weeks at most.
  */
 class TmdbClient(
@@ -148,13 +148,18 @@ class TmdbClient(
     }
 
     private fun get(path: String, vararg params: Pair<String, String>): JSONObject? {
+        // Either kind of TMDB credential works: the v4 Read Access Token (a long JWT) goes in the Authorization
+        // header, the v3 API key (32 hex characters) in the api_key parameter. A key sent as a Bearer token was
+        // refused (401) on every request.
+        val apiKey = token.length <= API_KEY_MAX_LENGTH
         val url = API.newBuilder()
             .addPathSegments(path)
             .apply { params.forEach { (key, value) -> addQueryParameter(key, value) } }
+            .apply { if (apiKey) addQueryParameter("api_key", token) }
             .build()
         val request = Request.Builder()
             .url(url)
-            .header("Authorization", "Bearer $token")
+            .apply { if (!apiKey) header("Authorization", "Bearer $token") }
             .header("Accept", "application/json")
             .build()
         http.newCall(request).execute().use { response ->
@@ -195,6 +200,7 @@ class TmdbClient(
         val API = "https://api.themoviedb.org/".toHttpUrl()
         const val HIT_TTL_MILLIS = 14L * 24 * 60 * 60 * 1000
         const val MISS_TTL_MILLIS = 24L * 60 * 60 * 1000
+        const val API_KEY_MAX_LENGTH = 40
     }
 }
 
