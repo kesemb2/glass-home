@@ -152,6 +152,13 @@ The shader runs only when a frame is drawn; an idle screen draws nothing. Glass 
 dots, shelf) samples the backdrop as if the page were at rest, so the camera moving does not render it again on
 every frame (the page only rests where that is exact, or with it off screen); grid glass has its own backdrop.
 
+**Lighter live glass.** Surfaces over 120 000 px² render their sample at half resolution, over 300 000 px² (the
+shelf, panels) at a quarter. The top bar's glass leaves the page out while the page is at the top (nothing of it
+is under the bar then), so a card's focus shine does not render that glass again. Automatic quality (Settings ›
+Glass, on by default) watches the frame times and, when a third of the last 30 frames take over 20 ms, shows
+cached glass until the screen has been still for 1.5 s. (Reference: Kyant0/AndroidLiquidGlass, the most used
+Compose liquid-glass library, records and redraws the backdrop the same way, at full resolution.)
+
 **Full-screen passes.** The hero is the backdrop plus one scrim pass (both scrims baked into one small bitmap drawn
 stretched), three during an item change. The grid backdrop is one pass (darkened by a colour filter) and the hero
 backdrop is not drawn under it. An overlay's dim is baked into its snapshot, and once the overlay is fully shown
@@ -212,8 +219,10 @@ Springs everywhere; never linear tweens.
 - **Menus**: open next to their card (below it when there is room, else above), scaling in from the card's side;
   a sharp copy of the card stays lifted over the blur.
 - **Folders**: open full screen over the blurred home screen (scale 0.94 → 1 and fade).
-- **Home**: from anywhere (the system's home intent or the Home helper) closes every overlay and returns to Play
-  with the camera at the top.
+- **Home**: from another app (the system's home intent or the Home helper) closes every overlay and returns to Play
+  with the camera at the top. Pressed while the home screen is already showing, it goes to the first app of the
+  favorites shelf at the end chosen in Settings › Home and startup (rightmost by default; the grid's first row
+  when the shelf is empty).
 - **Back** steps out one level: move mode, then a menu's or settings' sub-page (to its main page, focus on the row
   that opened it), then the menu, folder or settings panel; on the home screen itself (shelf, grid, top bar) it
   returns to Play like Home, and on Play it does nothing: this is the home screen. The activity takes the Back

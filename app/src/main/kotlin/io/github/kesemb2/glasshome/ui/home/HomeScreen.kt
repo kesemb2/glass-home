@@ -63,7 +63,9 @@ import io.github.kesemb2.glasshome.ui.apps.gridRows
 import io.github.kesemb2.glasshome.ui.components.ClockPill
 import io.github.kesemb2.glasshome.ui.components.GlassIconButton
 import io.github.kesemb2.glasshome.ui.debug.PerfOverlay
+import io.github.kesemb2.glasshome.data.settings.AppSettings
 import io.github.kesemb2.glasshome.ui.glass.GlassBackdrop
+import io.github.kesemb2.glasshome.ui.glass.GlassQuality
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassBackdrop
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassLive
 import io.github.kesemb2.glasshome.ui.glass.LocalGlassStyle
@@ -171,9 +173,24 @@ private fun HomeContent(
     }
 
     // Home while already here: back to the top (the activity has reset the navigation state).
+    // Home on the home screen itself: the first app of the shelf, at the end chosen in Settings (else of the
+    // grid's first row).
+    fun focusFirstApp(): Boolean {
+        val rightEnd = settings.homeKeyTarget == AppSettings.HOME_KEY_RIGHT
+        // In Hebrew the list starts on the right; in English on the left.
+        val fromStart = rightEnd == rtl
+        view.favorites.let { shelf ->
+            if (shelf.isNotEmpty()) return nav.focus(SHELF_PREFIX + (if (fromStart) shelf.first() else shelf.last()).packageName)
+        }
+        val row = view.grid.take(cardSize.columns)
+        val item = (if (fromStart) row.firstOrNull() else row.lastOrNull()) ?: return false
+        return nav.focus(GRID_PREFIX + item.key)
+    }
+
     LaunchedEffect(homeSignal) {
         if (homeSignal == 0) return@LaunchedEffect
         withFrameNanos { }
+        if (nav.homeToApps && focusFirstApp()) return@LaunchedEffect
         if (!focusHero()) focusShelf()
     }
 
@@ -258,10 +275,12 @@ private fun HomeContent(
         val pageLayer = rememberGraphicsLayer()
         val baseLayer = rememberGraphicsLayer()
         val behindPage: DrawScope.() -> Unit = remember(backdropLayer) { { drawLayer(backdropLayer) } }
-        val behindTopBar: DrawScope.() -> Unit = remember(backdropLayer, pageLayer) {
+        // The page only reaches the top bar once it has scrolled: at the top, the top bar's glass leaves it out, so
+        // the page changing (a card's focus shine, the shelf scrolling) does not render that glass again.
+        val behindTopBar: DrawScope.() -> Unit = remember(backdropLayer, pageLayer, cameraState) {
             {
                 drawLayer(backdropLayer)
-                drawLayer(pageLayer)
+                if (cameraState.value > 0.5f) drawLayer(pageLayer)
             }
         }
 
@@ -280,7 +299,11 @@ private fun HomeContent(
                 }
         }
 
-        CompositionLocalProvider(LocalCardSize provides cardSize, LocalGlassStyle provides settings.glassStyle) {
+        // Automatic quality: cached glass while the TV falls behind (see GlassQuality).
+        val glassStyle = settings.glassStyle.let {
+            if (it.live && settings.autoGlassQuality && GlassQuality.reduced) it.copy(live = false) else it
+        }
+        CompositionLocalProvider(LocalCardSize provides cardSize, LocalGlassStyle provides glassStyle) {
         CompositionLocalProvider(LocalFocusAllowed provides !overlaysOpen) {
           Box(
               Modifier

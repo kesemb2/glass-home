@@ -336,8 +336,13 @@ private const val RIM_BAND_RATIO = 0.05f
 private const val VIBRANCY = 1.5f
 private const val FOCUS_TINT = 0.06f
 
-/** Live glass renders surfaces larger than this (px²) at half resolution; the content behind is blurred anyway. */
+/**
+ * Live glass renders surfaces larger than these (px²) at half and at quarter resolution: the content behind is
+ * blurred anyway, and the work falls with the square of the scale (the shelf and panels at a quarter: 1/16 of the
+ * pixels). The rim light stays at full resolution.
+ */
 private const val HALF_RES_AREA = 120_000f
+private const val QUARTER_RES_AREA = 300_000f
 
 private fun refractPx(minSide: Float, density: Float, strength: Float): Float =
     min(REFRACT_MAX_PX, REFRACT_RATIO * minSide * min(1f, minSide / (REFERENCE_SIDE_DP * density))) * strength
@@ -532,7 +537,12 @@ private class LiveGlass(sources: LiveSources) {
         val width = scope.size.width
         val height = scope.size.height
         if (width < 1f || height < 1f) return
-        val k = if (width * height > HALF_RES_AREA) 2f else 1f
+        val area = width * height
+        val k = when {
+            area > QUARTER_RES_AREA -> 4f
+            area > HALF_RES_AREA -> 2f
+            else -> 1f
+        }
         val blur = style.blurDp * scope.density / k
         val pad = ceil(blur * 2f)
         val layerWidth = ceil(width / k + 2f * pad).toInt()

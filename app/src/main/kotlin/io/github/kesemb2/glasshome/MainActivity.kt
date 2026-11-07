@@ -23,6 +23,7 @@ import io.github.kesemb2.glasshome.data.settings.AppSettings
 import io.github.kesemb2.glasshome.data.watchnext.WatchNextAccess
 import io.github.kesemb2.glasshome.image.trimForBackground
 import io.github.kesemb2.glasshome.system.HomeSystem
+import io.github.kesemb2.glasshome.ui.glass.GlassQuality
 import io.github.kesemb2.glasshome.ui.home.AppsController
 import io.github.kesemb2.glasshome.ui.home.Area
 import io.github.kesemb2.glasshome.ui.home.HomeSetup
@@ -89,6 +90,7 @@ class MainActivity : ComponentActivity() {
                 }
             },
         )
+        GlassQuality.attach(window)
         setContent {
             val typography = remember { GlassTypography.create(this) }
             CompositionLocalProvider(LocalGlassType provides typography) {
@@ -130,10 +132,12 @@ class MainActivity : ComponentActivity() {
     /** Home pressed (the system's home intent, or the Home helper): back to the top of the home screen. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        if (intent.isHomeIntent()) goHome()
+        // Home while the home screen is already showing goes to the first app; from elsewhere, to Continue Watching.
+        if (intent.isHomeIntent()) goHome(toApps = visible.value)
     }
 
-    private fun goHome() {
+    private fun goHome(toApps: Boolean = false) {
+        nav.homeToApps = toApps
         nav.reopenSettings = null
         nav.closeAll()
         nav.area = Area.Hero

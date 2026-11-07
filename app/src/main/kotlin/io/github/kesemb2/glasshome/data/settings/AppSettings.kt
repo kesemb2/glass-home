@@ -53,12 +53,14 @@ class AppSettings(context: Context) {
     private val homeButtonFlag = Flag(HomeSystem.KEY_HOME_BUTTON, true)
     private val replaceHomeFlag = Flag(HomeSystem.KEY_REPLACE_HOME, true)
     private val glassLive = Flag("glass_live", true)
+    private val glassAuto = Flag("glass_auto_quality", true)
     private val glassBlur = Choice("glass_blur_dp", DEFAULT_BLUR, BLURS.first()..BLURS.last())
     private val glassRefraction = Choice("glass_refraction_pct", DEFAULT_REFRACTION, REFRACTIONS.first()..REFRACTIONS.last())
     private val glassBrightness = Choice("glass_brightness_pct", DEFAULT_BRIGHTNESS, BRIGHTNESSES.first()..BRIGHTNESSES.last())
     private val glassTransparency =
         Choice("glass_transparency_pct", DEFAULT_TRANSPARENCY, TRANSPARENCIES.first()..TRANSPARENCIES.last())
     private val scrim = Text("scrim_color", ScrimColors.BLACK)
+    private val homeKey = Text("home_key_target", HOME_KEY_RIGHT)
 
     /** Also show apps that only have a phone/tablet launcher activity. */
     var showPhoneApps: Boolean
@@ -79,6 +81,13 @@ class AppSettings(context: Context) {
         get() = glassLive.value
         set(v) {
             glassLive.value = v
+        }
+
+    /** Live glass gives way to cached glass while the TV falls behind (see GlassQuality). */
+    var autoGlassQuality: Boolean
+        get() = glassAuto.value
+        set(v) {
+            glassAuto.value = v
         }
 
     /** Blur behind live glass, dp. */
@@ -121,6 +130,7 @@ class AppSettings(context: Context) {
 
     fun resetGlass() {
         liveGlass = true
+        autoGlassQuality = true
         blurDp = DEFAULT_BLUR
         refractionPercent = DEFAULT_REFRACTION
         brightnessPercent = DEFAULT_BRIGHTNESS
@@ -153,6 +163,13 @@ class AppSettings(context: Context) {
         get() = button.value
         set(v) {
             button.value = v
+        }
+
+    /** Home on the home screen goes to the shelf's rightmost ([HOME_KEY_RIGHT]) or leftmost app. */
+    var homeKeyTarget: String
+        get() = homeKey.value
+        set(v) {
+            homeKey.value = v
         }
 
     /** The hero's gradient colour, one of [ScrimColors.KEYS]. */
@@ -191,6 +208,9 @@ class AppSettings(context: Context) {
         const val DEFAULT_LOGO_PERCENT = 70
         val TEXT_PERCENTS = listOf(80, 90, 100, 110, 120, 130)
         const val DEFAULT_TEXT_PERCENT = 100
+        const val HOME_KEY_RIGHT = "right"
+        const val HOME_KEY_LEFT = "left"
+
         val BUTTON_PERCENTS = listOf(70, 80, 90, 100, 110, 120, 130)
         const val DEFAULT_BUTTON_PERCENT = 100
 

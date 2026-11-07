@@ -88,6 +88,12 @@
     <string name="size_extra_small">קטן מאוד</string>
 
     <!-- Settings: glass -->
+    <string name="home_key_target">כפתור הבית במסך הראשי</string>
+    <string name="home_key_target_hint">קופץ לאפליקציה הראשונה בצד הזה של המועדפים</string>
+    <string name="home_key_right">האפליקציה הימנית</string>
+    <string name="home_key_left">האפליקציה השמאלית</string>
+    <string name="glass_auto">איכות אוטומטית</string>
+    <string name="glass_auto_hint">זכוכית פשוטה לרגע כשהטלוויזיה לא עומדת בקצב</string>
     <string name="glass_live">זכוכית חיה</string>
     <string name="glass_live_hint">מגיבה בזמן אמת למה שמאחוריה</string>
     <string name="glass_blur">טשטוש</string>

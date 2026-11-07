@@ -312,6 +312,8 @@ private fun ColumnScope.HomePage(settings: AppSettings, setup: HomeSetup) {
     val first = rememberFirstFocus()
     val on = stringResource(R.string.settings_on)
     val off = stringResource(R.string.settings_off)
+    val homeKeyRight = stringResource(R.string.home_key_right)
+    val homeKeyLeft = stringResource(R.string.home_key_left)
     Title(stringResource(R.string.settings_home))
     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
         MenuRow(
@@ -332,6 +334,16 @@ private fun ColumnScope.HomePage(settings: AppSettings, setup: HomeSetup) {
             secondary = stringResource(R.string.home_button_hint),
             trailing = if (settings.homeButton) on else off,
             onClick = { settings.homeButton = !settings.homeButton },
+        )
+        ChoiceRow(
+            text = stringResource(R.string.home_key_target),
+            secondary = stringResource(R.string.home_key_target_hint),
+            options = listOf(AppSettings.HOME_KEY_RIGHT, AppSettings.HOME_KEY_LEFT),
+            selected = settings.homeKeyTarget,
+            label = {
+                if (it == AppSettings.HOME_KEY_RIGHT) homeKeyRight else homeKeyLeft
+            },
+            onSelect = { settings.homeKeyTarget = it },
         )
         MenuRow(
             text = stringResource(R.string.home_replace),
@@ -374,6 +386,12 @@ private fun ColumnScope.GlassPage(settings: AppSettings) {
             trailing = if (settings.liveGlass) on else off,
             onClick = { settings.liveGlass = !settings.liveGlass },
             modifier = Modifier.focusRequester(first),
+        )
+        MenuRow(
+            text = stringResource(R.string.glass_auto),
+            secondary = stringResource(R.string.glass_auto_hint),
+            trailing = if (settings.autoGlassQuality) on else off,
+            onClick = { settings.autoGlassQuality = !settings.autoGlassQuality },
         )
         ChoiceRow(
             text = stringResource(R.string.glass_blur),

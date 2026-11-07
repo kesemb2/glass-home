@@ -92,6 +92,12 @@
     <string name="size_extra_small">Extra small</string>
 
     <!-- Settings: glass -->
+    <string name="home_key_target">Home on the home screen</string>
+    <string name="home_key_target_hint">Goes to the first app on this side of the favorites</string>
+    <string name="home_key_right">Rightmost app</string>
+    <string name="home_key_left">Leftmost app</string>
+    <string name="glass_auto">Automatic quality</string>
+    <string name="glass_auto_hint">Simpler glass for a moment when the TV falls behind</string>
     <string name="glass_live">Live glass</string>
     <string name="glass_live_hint">Follows what is behind it in real time</string>
     <string name="glass_blur">Blur</string>

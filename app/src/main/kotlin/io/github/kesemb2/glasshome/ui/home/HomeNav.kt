@@ -88,6 +88,9 @@ class HomeNav {
     /** A settings page to open again when the home screen comes back (after a trip to the TV's own settings). */
     var reopenSettings: SettingsPage? = null
 
+    /** The last Home press was on the home screen itself: it goes to the first app instead of Play. */
+    var homeToApps = false
+
     /** Back, handed over by the activity (see [HomeBack]). */
     val back = HomeBack()
 
