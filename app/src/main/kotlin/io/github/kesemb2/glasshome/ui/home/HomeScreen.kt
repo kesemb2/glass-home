@@ -421,7 +421,10 @@ private fun HomeContent(
             }
 
             // Fixed at the top: settings and the clock, their glass over the page and the backdrop.
-            CompositionLocalProvider(LocalGlassLive provides behindTopBar) {
+            // Cached glass in the top bar shows what is behind it on screen: the hero's image at the top, the grid's
+            // blurred, darkened one in the grid (it stays fixed while the page scrolls under it).
+            val topBarBackdrop = if (gridAmount > 0.5f) gridGlass else LocalGlassBackdrop.current
+            CompositionLocalProvider(LocalGlassLive provides behindTopBar, LocalGlassBackdrop provides topBarBackdrop) {
             Row(
                 Modifier
                     .align(Alignment.TopEnd)
